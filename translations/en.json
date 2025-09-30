@@ -1,0 +1,50 @@
+{
+  "common": {
+    "dashboard": "Dashboard",
+    "messages": "Messages",
+    "settings": "Settings",
+    "logout": "Logout",
+    "search": "Search here...",
+    "update": "Update Information",
+    "reset": "Reset Changes",
+    "upload": "Upload Photo",
+    "delete": "Delete",
+    "continue": "Continue",
+    "cancel": "Cancel",
+    "save": "Save",
+    "edit": "Edit",
+    "close": "Close"
+  },
+  "navigation": {
+    "overview": "Overview",
+    "support": "Support",
+    "breadcrumb": "Dashboard >> Settings"
+  },
+  "settings": {
+    "title": "Settings",
+    "accountSettings": "Account Settings",
+    "language": "Language",
+    "helpSupport": "Help & Support",
+    "privacyPolicy": "Privacy Policy",
+    "termsConditions": "Terms & Conditions",
+    "profilePicture": "Profile Picture",
+    "profilePictureDesc": "You can edit, remove or upload your profile picture.",
+    "personalInfo": "Personal Information",
+    "personalInfoDesc": "You can edit, remove or upload your personal information.",
+    "fullName": "Full Name",
+    "emailAddress": "Email address",
+    "enableNotifications": "Enable Notifications",
+    "notificationsDesc": "You can turn off on-app notifications anytime.",
+    "changePassword": "Change Password",
+    "changeLanguage": "Change Language",
+    "languageDesc": "Here you can change your language as per your preference."
+  },
+  "languages": {
+    "english": "English",
+    "german": "German",
+    "chinese": "Chinese",
+    "dutch": "Dutch",
+    "french": "French",
+    "arabic": "Arabic"
+  }
+}

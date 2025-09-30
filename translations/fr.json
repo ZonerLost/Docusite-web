@@ -1,0 +1,50 @@
+{
+  "common": {
+    "dashboard": "Tableau de bord",
+    "messages": "Messages",
+    "settings": "Paramètres",
+    "logout": "Déconnexion",
+    "search": "Rechercher ici...",
+    "update": "Mettre à jour les informations",
+    "reset": "Réinitialiser les modifications",
+    "upload": "Télécharger une photo",
+    "delete": "Supprimer",
+    "continue": "Continuer",
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "edit": "Modifier",
+    "close": "Fermer"
+  },
+  "navigation": {
+    "overview": "Aperçu",
+    "support": "Support",
+    "breadcrumb": "Tableau de bord >> Paramètres"
+  },
+  "settings": {
+    "title": "Paramètres",
+    "accountSettings": "Paramètres du compte",
+    "language": "Langue",
+    "helpSupport": "Aide et support",
+    "privacyPolicy": "Politique de confidentialité",
+    "termsConditions": "Termes et conditions",
+    "profilePicture": "Photo de profil",
+    "profilePictureDesc": "Vous pouvez modifier, supprimer ou télécharger votre photo de profil.",
+    "personalInfo": "Informations personnelles",
+    "personalInfoDesc": "Vous pouvez modifier, supprimer ou télécharger vos informations personnelles.",
+    "fullName": "Nom complet",
+    "emailAddress": "Adresse e-mail",
+    "enableNotifications": "Activer les notifications",
+    "notificationsDesc": "Vous pouvez désactiver les notifications de l'application à tout moment.",
+    "changePassword": "Changer le mot de passe",
+    "changeLanguage": "Changer la langue",
+    "languageDesc": "Vous pouvez ici changer votre langue selon vos préférences."
+  },
+  "languages": {
+    "english": "Anglais",
+    "german": "Allemand",
+    "chinese": "Chinois",
+    "dutch": "Néerlandais",
+    "french": "Français",
+    "arabic": "Arabe"
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "common": {
+    "dashboard": "仪表板",
+    "messages": "消息",
+    "settings": "设置",
+    "logout": "退出登录",
+    "search": "在此搜索...",
+    "update": "更新信息",
+    "reset": "重置更改",
+    "upload": "上传照片",
+    "delete": "删除",
+    "continue": "继续",
+    "cancel": "取消",
+    "save": "保存",
+    "edit": "编辑",
+    "close": "关闭"
+  },
+  "navigation": {
+    "overview": "概览",
+    "support": "支持",
+    "breadcrumb": "仪表板 >> 设置"
+  },
+  "settings": {
+    "title": "设置",
+    "accountSettings": "账户设置",
+    "language": "语言",
+    "helpSupport": "帮助和支持",
+    "privacyPolicy": "隐私政策",
+    "termsConditions": "条款和条件",
+    "profilePicture": "头像",
+    "profilePictureDesc": "您可以编辑、删除或上传您的头像。",
+    "personalInfo": "个人信息",
+    "personalInfoDesc": "您可以编辑、删除或上传您的个人信息。",
+    "fullName": "姓名",
+    "emailAddress": "电子邮件地址",
+    "enableNotifications": "启用通知",
+    "notificationsDesc": "您可以随时关闭应用内通知。",
+    "changePassword": "更改密码",
+    "changeLanguage": "更改语言",
+    "languageDesc": "您可以在这里根据您的偏好更改语言。"
+  },
+  "languages": {
+    "english": "英语",
+    "german": "德语",
+    "chinese": "中文",
+    "dutch": "荷兰语",
+    "french": "法语",
+    "arabic": "阿拉伯语"
+  }
+}

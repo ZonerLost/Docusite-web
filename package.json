@@ -1,0 +1,40 @@
+{
+  "name": "Docusite",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "perf:check": "node scripts/performance-check.js",
+    "perf:build": "npm run build && npm run perf:check"
+  },
+  "dependencies": {
+    "@hello-pangea/dnd": "^18.0.1",
+    "@types/nprogress": "^0.2.3",
+    "formik": "^2.4.6",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.3",
+    "lucide-react": "^0.263.1",
+    "next": "14.2.5",
+    "nprogress": "^0.2.0",
+    "react": "^18",
+    "react-dom": "^18",
+    "react-flag-kit": "^1.1.1",
+    "yup": "^1.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10.4.19",
+    "clsx": "^2.1.0",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.5",
+    "postcss": "^8.4.39",
+    "tailwind-merge": "^2.2.1",
+    "tailwindcss": "^3.4.4",
+    "typescript": "^5"
+  }
+}

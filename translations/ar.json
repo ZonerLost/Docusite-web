@@ -1,0 +1,50 @@
+{
+  "common": {
+    "dashboard": "لوحة التحكم",
+    "messages": "الرسائل",
+    "settings": "الإعدادات",
+    "logout": "تسجيل الخروج",
+    "search": "ابحث هنا...",
+    "update": "تحديث المعلومات",
+    "reset": "إعادة تعيين التغييرات",
+    "upload": "رفع صورة",
+    "delete": "حذف",
+    "continue": "متابعة",
+    "cancel": "إلغاء",
+    "save": "حفظ",
+    "edit": "تعديل",
+    "close": "إغلاق"
+  },
+  "navigation": {
+    "overview": "نظرة عامة",
+    "support": "الدعم",
+    "breadcrumb": "لوحة التحكم >> الإعدادات"
+  },
+  "settings": {
+    "title": "الإعدادات",
+    "accountSettings": "إعدادات الحساب",
+    "language": "اللغة",
+    "helpSupport": "المساعدة والدعم",
+    "privacyPolicy": "سياسة الخصوصية",
+    "termsConditions": "الشروط والأحكام",
+    "profilePicture": "صورة الملف الشخصي",
+    "profilePictureDesc": "يمكنك تعديل أو إزالة أو رفع صورة ملفك الشخصي.",
+    "personalInfo": "المعلومات الشخصية",
+    "personalInfoDesc": "يمكنك تعديل أو إزالة أو رفع معلوماتك الشخصية.",
+    "fullName": "الاسم الكامل",
+    "emailAddress": "عنوان البريد الإلكتروني",
+    "enableNotifications": "تفعيل الإشعارات",
+    "notificationsDesc": "يمكنك إيقاف إشعارات التطبيق في أي وقت.",
+    "changePassword": "تغيير كلمة المرور",
+    "changeLanguage": "تغيير اللغة",
+    "languageDesc": "هنا يمكنك تغيير لغتك حسب تفضيلك."
+  },
+  "languages": {
+    "english": "الإنجليزية",
+    "german": "الألمانية",
+    "chinese": "الصينية",
+    "dutch": "الهولندية",
+    "french": "الفرنسية",
+    "arabic": "العربية"
+  }
+}

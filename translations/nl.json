@@ -1,0 +1,50 @@
+{
+  "common": {
+    "dashboard": "Dashboard",
+    "messages": "Berichten",
+    "settings": "Instellingen",
+    "logout": "Uitloggen",
+    "search": "Zoek hier...",
+    "update": "Informatie bijwerken",
+    "reset": "Wijzigingen resetten",
+    "upload": "Foto uploaden",
+    "delete": "Verwijderen",
+    "continue": "Doorgaan",
+    "cancel": "Annuleren",
+    "save": "Opslaan",
+    "edit": "Bewerken",
+    "close": "Sluiten"
+  },
+  "navigation": {
+    "overview": "Overzicht",
+    "support": "Ondersteuning",
+    "breadcrumb": "Dashboard >> Instellingen"
+  },
+  "settings": {
+    "title": "Instellingen",
+    "accountSettings": "Accountinstellingen",
+    "language": "Taal",
+    "helpSupport": "Hulp en ondersteuning",
+    "privacyPolicy": "Privacybeleid",
+    "termsConditions": "Algemene voorwaarden",
+    "profilePicture": "Profielfoto",
+    "profilePictureDesc": "U kunt uw profielfoto bewerken, verwijderen of uploaden.",
+    "personalInfo": "Persoonlijke informatie",
+    "personalInfoDesc": "U kunt uw persoonlijke informatie bewerken, verwijderen of uploaden.",
+    "fullName": "Volledige naam",
+    "emailAddress": "E-mailadres",
+    "enableNotifications": "Meldingen inschakelen",
+    "notificationsDesc": "U kunt app-meldingen op elk moment uitschakelen.",
+    "changePassword": "Wachtwoord wijzigen",
+    "changeLanguage": "Taal wijzigen",
+    "languageDesc": "Hier kunt u uw taal wijzigen volgens uw voorkeur."
+  },
+  "languages": {
+    "english": "Engels",
+    "german": "Duits",
+    "chinese": "Chinees",
+    "dutch": "Nederlands",
+    "french": "Frans",
+    "arabic": "Arabisch"
+  }
+}
