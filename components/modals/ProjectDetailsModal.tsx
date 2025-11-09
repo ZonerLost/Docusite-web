@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import { X } from 'lucide-react';
 import ProjectHeader from './project-details/ProjectHeader';
@@ -8,6 +8,13 @@ import ProjectTabs from './project-details/ProjectTabs';
 import MembersList from './project-details/MembersList';
 import AddMemberModal from './AddMemberModal';
 import CreateProjectModal from './CreateProjectModal';
+import { updateProject, deleteProject, Collaborator, ProjectDoc } from '@/lib/projects';
+import { toast } from 'react-hot-toast';
+import ConfirmDeleteModal from './ConfirmDeleteModal';
+// Firestore direct imports no longer needed here after invite switch
+// Keep UI and other logic unchanged
+import { sendProjectInvite } from '@/lib/invitations';
+import { checkProjectPermission, checkProjectEditPermission } from '@/lib/permissions';
 
 interface Project {
   id: string;
@@ -18,6 +25,7 @@ interface Project {
   projectOwner?: string;
   deadline?: string;
   members?: number;
+  raw?: ProjectDoc;
 }
 
 interface ProjectDetailsModalProps {
@@ -32,6 +40,15 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({ isOpen, onClo
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
   const [addMemberMode, setAddMemberMode] = useState<'invite' | 'add'>('add');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  // Local copy for optimistic updates (e.g., adding members)
+  const [localProject, setLocalProject] = useState<Project | null>(project);
+
+  // Keep localProject in sync if parent prop changes while modal is open
+  React.useEffect(() => {
+    if (isOpen) setLocalProject(project);
+  }, [isOpen, project]);
 
   if (!isOpen || !project) return null;
 
@@ -39,10 +56,17 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({ isOpen, onClo
     setIsEditModalOpen(true);
   };
 
-  const handleRedirectToProjectDetails = () => {
+  const handleRedirectToProjectDetails = async () => {
     if (!project) return;
     try {
-      // Persist selected project for the details page to consume
+      const { checkProjectPermission } = await import('@/lib/permissions');
+      const ok = await checkProjectPermission(project.id);
+      if (!ok) return;
+    } catch {
+      // Block navigation on unexpected errors
+      return;
+    }
+    try {
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('currentProject', JSON.stringify(project));
       }
@@ -52,13 +76,40 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({ isOpen, onClo
   };
 
   const handleDeleteProject = () => {
-    console.log('Delete project:', project.id);
+    setIsDeleteOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!project) return;
+    setIsDeleting(true);
+    try {
+      const ok = await checkProjectEditPermission(project.id);
+      if (!ok) { setIsDeleteOpen(false); return; }
+      await deleteProject(project.id);
+      toast.success('Project deleted');
+      setIsDeleteOpen(false);
+      onClose();
+    } catch (e: any) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to delete project:', e);
+      const code = e?.code || e?.message || '';
+      const msg = code === 'permission-denied'
+        ? 'Permission denied. Only the project owner can delete.'
+        : 'Failed to delete project';
+      toast.error(msg);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleGroupChat = () => {
-    console.log('Open group chat for project:', project.id);
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('currentProject', JSON.stringify(project));
+      }
+    } catch {}
     onClose();
-    router.push('/dashboard/messages')
+    router.push({ pathname: '/dashboard/messages', query: { projectId: project.id } });
   };
 
   const handleInviteMembers = () => {
@@ -71,13 +122,87 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({ isOpen, onClo
     setIsAddMemberOpen(true);
   };
 
-  const handleAddMember = (memberData: { name: string; role: string }) => {
-    console.log('Add member to project:', project.id, memberData);
+  const handleAddMember = async (memberData: { name: string; email: string; role: string }) => {
+    if (!project) return;
+    const pid = project.id;
+    try {
+      const ok = await checkProjectEditPermission(pid);
+      if (!ok) return;
+      await sendProjectInvite({
+        projectId: pid,
+        projectTitle: project.name,
+        invitedEmail: (memberData.email || '').trim(),
+        invitedUserName: (memberData.name || '').trim(),
+        role: (memberData.role || '').trim() || 'Member',
+        accessLevel: 'view',
+      });
+      toast.success('Invite sent');
+    } catch (e: any) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to send invite:', e);
+      const msg = e?.code === 'permission-denied'
+        ? 'Permission denied. Only the project owner can invite.'
+        : 'Failed to send invite';
+      toast.error(msg);
+    } finally {
+      setIsAddMemberOpen(false);
+    }
   };
 
-  const handleUpdateProject = (projectData: any) => {
-    console.log('Update project:', project.id, projectData);
-    setIsEditModalOpen(false);
+  const handleUpdateProject = async (projectData: any) => {
+    try {
+      const ok = await checkProjectEditPermission(project.id);
+      if (!ok) return;
+      await updateProject(project.id, {
+        title: projectData.title,
+        clientName: projectData.clientName,
+        location: projectData.location,
+        deadline: projectData.deadline,
+        members: projectData.members,
+        viewAccess: projectData.viewAccess,
+        editAccess: projectData.editAccess,
+      });
+      // After updating fields, trigger invites for any new emails not already collaborators
+      try {
+        const existingEmails = new Set(
+          ((localProject || project).raw?.collaborators || [])
+            .map((c: any) => (c?.email || '').toString().trim().toLowerCase())
+            .filter(Boolean)
+        );
+        const requested: string[] = Array.isArray(projectData.members) ? projectData.members : [];
+        const newEmails = Array.from(
+          new Set(
+            requested
+              .map((e) => (e || '').toString().trim().toLowerCase())
+              .filter((e) => !!e && !existingEmails.has(e))
+          )
+        );
+        if (newEmails.length > 0) {
+          await Promise.allSettled(
+            newEmails.map((email) =>
+              sendProjectInvite({
+                projectId: project.id,
+                projectTitle: project.name,
+                invitedEmail: email,
+                role: 'Member',
+                accessLevel: projectData.editAccess ? 'edit' : 'view',
+              })
+            )
+          );
+        }
+      } catch {
+        // Swallow invite errors to avoid blocking update flow
+      }
+      toast.success('Project updated');
+      setIsEditModalOpen(false);
+    } catch (e: any) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to update project:', e);
+      const msg = e?.code === 'permission-denied'
+        ? 'Permission denied. Only the project owner can update.'
+        : 'Failed to update project';
+      toast.error(msg);
+    }
   };
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -87,6 +212,7 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({ isOpen, onClo
   };
 
   return (
+    <>
     <div 
       className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
       onClick={handleBackdropClick}
@@ -103,7 +229,7 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({ isOpen, onClo
         {/* Modal Content */}
         <div className="px-3 py-4 overflow-y-auto max-h-[90vh]">
           <ProjectHeader
-            projectName={project.name}
+            projectName={(localProject || project).name}
             onEdit={handleEditProject}
             onDelete={handleDeleteProject}
             onGroupChat={handleGroupChat}
@@ -113,25 +239,26 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({ isOpen, onClo
           />
 
           <ProjectInfo
-            clientName={project.clientName || 'Not specified'}
-            status={project.status}
-            location={project.location}
-            projectOwner={project.projectOwner || 'Not specified'}
-            deadline={project.deadline || 'Not specified'}
-            members={project.members || 0}
+            clientName={(localProject || project).clientName || 'Not specified'}
+            status={(localProject || project).status}
+            location={(localProject || project).location}
+            projectOwner={(localProject || project).projectOwner || 'Not specified'}
+            deadline={(localProject || project).deadline || 'Not specified'}
+            members={(localProject || project).members || 0}
           />
 
           <ProjectTabs
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            memberCount={project.members || 0}
+            memberCount={(localProject || project).members || 0}
           />
 
-          {activeTab === 'files' && <FilesList projectId={project.id} project={project} />}
+          {activeTab === 'files' && <FilesList projectId={project.id} project={(localProject || project)} />}
           {activeTab === 'members' && (
             <MembersList 
-              projectId={project.id} 
-              memberCount={project.members || 0}
+              projectId={project.id}
+              memberCount={(localProject || project).members || 0}
+              collaborators={(localProject || project).raw?.collaborators as any}
               onAddMemberClick={handleAddMemberClickFromList}
             />
           )}
@@ -159,13 +286,57 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({ isOpen, onClo
             clientName: project.clientName || '',
             location: project.location,
             deadline: project.deadline || '',
-            members: [], // You might want to populate this with actual members
-            viewAccess: false, // You might want to populate this with actual access settings
-            editAccess: false // You might want to populate this with actual access settings
+            members: Array.from(
+              new Set(
+                ((localProject || project).raw?.collaborators || [])
+                  .map((c: any) => (c?.email || '').toString().trim().toLowerCase())
+                  .filter(Boolean)
+              )
+            ),
+            // Load previously saved access: if any non-owner collaborator has edit, prefer edit; else view
+            viewAccess: (() => {
+              try {
+                const collabs = (((localProject || project).raw?.collaborators || []) as any[]) || [];
+                const ownerId = (localProject || project).raw?.ownerId || '';
+                const anyEdit = collabs.some((c) => {
+                  if (!c) return false;
+                  const isOwner = (c?.uid && c.uid === ownerId) || String(c?.role || '').toLowerCase().includes('owner');
+                  if (isOwner) return false;
+                  const role = String(c?.role || '').toLowerCase();
+                  return c?.canEdit === true || role.includes('edit');
+                });
+                return !anyEdit;
+              } catch { return true; }
+            })(),
+            editAccess: (() => {
+              try {
+                const collabs = (((localProject || project).raw?.collaborators || []) as any[]) || [];
+                const ownerId = (localProject || project).raw?.ownerId || '';
+                const anyEdit = collabs.some((c) => {
+                  if (!c) return false;
+                  const isOwner = (c?.uid && c.uid === ownerId) || String(c?.role || '').toLowerCase().includes('owner');
+                  if (isOwner) return false;
+                  const role = String(c?.role || '').toLowerCase();
+                  return c?.canEdit === true || role.includes('edit');
+                });
+                return anyEdit;
+              } catch { return false; }
+            })(),
           }}
         />
       </div>
     </div>
+    <ConfirmDeleteModal
+      isOpen={isDeleteOpen}
+      onCancel={() => setIsDeleteOpen(false)}
+      onConfirm={handleConfirmDelete}
+      loading={isDeleting}
+      title="Delete project?"
+      message={`Are you sure you want to delete "${project.name}"? This action cannot be undone.`}
+      confirmText="Delete"
+      cancelText="Cancel"
+    />
+    </>
   );
 };
 

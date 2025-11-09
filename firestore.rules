@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() { return request.auth != null; }
+    function ownsEmail(emailDoc) {
+      return request.auth != null && request.auth.token.email != null && lower(request.auth.token.email) == emailDoc;
+    }
+    // Allow each authenticated user to read/write only their own document
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Projects: allow all signed-in users to read and write
+    // Simplifies client uploads that append to files[]
+    match /projects/{projectId} {
+      allow read, write: if isAuthenticated();
+      // Members subcollection: write only by the invited user or project owner
+      match /members/{userId} {
+        allow read: if isAuthenticated();
+        allow create, update, delete: if request.auth != null && (
+          request.auth.uid == userId ||
+          get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid ||
+          get(/databases/$(database)/documents/projects/$(projectId)).data.createdBy == request.auth.uid
+        );
+      }
+    }
+
+    // Project files mirror collection
+    match /projectFiles/{docId} {
+      allow read, create: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
+    }
+
+    // Notifications: email key is stored in lowercase; allow case-insensitive access for the owner
+    match /notifications/{emailDoc} {
+      allow read: if ownsEmail(emailDoc);
+      match /items/{itemId} {
+        allow read: if ownsEmail(emailDoc);
+        allow update, delete: if ownsEmail(emailDoc);
+        allow create: if request.auth != null; // typically created by server/mobile app/Admin
+      }
+    }
+
+    // Pending invite requests: scoped by invited email (lowercased)
+    match /pending_requests/{emailDoc} {
+      // Allow creating metadata doc by any authenticated inviter
+      allow create: if isAuthenticated();
+      // Read only by the owner
+      allow read: if ownsEmail(emailDoc);
+      // Allow the owner to update; also allow any authenticated user to bump lastUpdated only
+      allow update: if ownsEmail(emailDoc) || (isAuthenticated() && request.resource.data.diff(resource.data).changedKeys().hasOnly(['lastUpdated']));
+      // Delete only by the owner
+      allow delete: if ownsEmail(emailDoc);
+      match /requests/{inviteId} {
+        // Inviter creates the invite under the invitee's email
+        allow create: if isAuthenticated();
+        // Only the owner of the email can read or modify their invite documents
+        allow read, update, delete: if ownsEmail(emailDoc);
+      }
+    }
+
+    // Group chat: allow any authenticated user (aligns with app’s current behavior)
+    // For stricter security, reintroduce membership checks later.
+    match /projects/{projectId}/group_chat/metadata {
+      allow read, write, create, update: if isAuthenticated();
+      match /messages/{messageId} {
+        allow read, write, create: if isAuthenticated();
+        // Updates (e.g., read receipts)
+        allow update: if isAuthenticated();
+      }
+    }
+
+    // Deny everything else by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Check } from 'lucide-react';
 
@@ -17,13 +17,18 @@ const Checkbox: React.FC<CheckboxProps> = ({
   labelClassName,
   ...props
 }) => {
-  const [isChecked, setIsChecked] = useState(checked || false);
+  // Support controlled and uncontrolled usage
+  const isControlled = typeof checked !== 'undefined';
+  const [uncontrolledChecked, setUncontrolledChecked] = useState<boolean>(!!checked);
+  const { id: providedId, ...inputProps } = props;
+
+  const currentChecked = isControlled ? !!checked : uncontrolledChecked;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setIsChecked(e.target.checked);
-    if (onChange) {
-      onChange(e);
+    if (!isControlled) {
+      setUncontrolledChecked(e.target.checked);
     }
+    onChange?.(e);
   };
 
   const getSizeClasses = () => {
@@ -57,42 +62,45 @@ const Checkbox: React.FC<CheckboxProps> = ({
 
   const sizeClasses = getSizeClasses();
 
+  const generatedId = useId();
+  const inputId = providedId || `checkbox-${generatedId}`;
+
   return (
     <div className="flex items-center">
       <div className="relative">
         <input
           type="checkbox"
           className="sr-only"
-          checked={isChecked}
+          checked={currentChecked}
           onChange={handleChange}
-          id={props.id || `checkbox-${Math.random().toString(36).substr(2, 9)}`}
-          {...props}
+          id={inputId}
+          {...inputProps}
         />
         <div
           className={cn(
             `${sizeClasses.checkbox} ${sizeClasses.borderWidth} border-gray-300 ${sizeClasses.borderRadius} flex items-center justify-center cursor-pointer transition-all duration-200 bg-light-gray`,
-            isChecked && 'bg-action border-action',
+            currentChecked && 'bg-action border-action',
             className
           )}
           onClick={() => {
-            const newChecked = !isChecked;
-            setIsChecked(newChecked);
-            if (onChange) {
-              const syntheticEvent = {
-                target: { checked: newChecked }
-              } as React.ChangeEvent<HTMLInputElement>;
-              onChange(syntheticEvent);
+            const newChecked = !currentChecked;
+            if (!isControlled) {
+              setUncontrolledChecked(newChecked);
             }
+            const syntheticEvent = {
+              target: { checked: newChecked }
+            } as React.ChangeEvent<HTMLInputElement>;
+            onChange?.(syntheticEvent);
           }}
         >
-          {isChecked && (
+          {currentChecked && (
             <Check className={`${sizeClasses.icon} text-white`} />
           )}
         </div>
       </div>
       {label && (
         <label 
-          htmlFor={props.id} 
+          htmlFor={inputId} 
           className={cn(
             `ml-2 block ${sizeClasses.label} text-gray-700 cursor-pointer`,
             labelClassName

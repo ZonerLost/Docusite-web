@@ -1,4 +1,4 @@
-import { useUser } from '@/contexts/UserContext';
+import { useUser } from '@/context/UserContext';
 import enTranslations from '@/translations/en.json';
 import deTranslations from '@/translations/de.json';
 import arTranslations from '@/translations/ar.json';
@@ -31,3 +31,5 @@ export const useTranslation = () => {
   
   return { t, language };
 };
+
+export default useTranslation;

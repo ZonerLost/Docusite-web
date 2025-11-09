@@ -4,7 +4,7 @@ export default function Document() {
   return (
     <Html lang="en">
       <Head>
-        <title>Docusite</title>
+        {/* Static meta is fine here; avoid dynamic title in _document */}
         <meta name="description" content="Docusite" />
       </Head>
       <body>

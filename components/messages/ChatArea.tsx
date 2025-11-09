@@ -10,16 +10,30 @@ interface Message {
   timestamp: string;
   avatar?: string;
   isRead?: boolean;
+  messageType?: 'text' | 'image' | 'file';
+  fileUrl?: string | null;
+  fileName?: string | null;
+  replyTo?: string | null;
+  replyText?: string | null;
+  replySender?: string | null;
+  reactions?: Record<string, string[]>;
 }
 
 interface ChatAreaProps {
   selectedChat: string;
   messages: Message[];
-  onSendMessage: (content: string) => void;
+  onSendMessage: (payload: { type: 'text'; content: string; replyTo?: string | null; replyText?: string | null; replySender?: string | null } | { type: 'image' | 'file'; file: File }) => Promise<void> | void;
   onBackToChats?: () => void;
+  disabled?: boolean;
+  projectName?: string;
+  onDeleteMessage?: (messageId: string) => Promise<void> | void;
+  onReplyMessage?: (message: { id: string; text: string; sender: string }) => void;
+  replyContext?: { id: string; text: string; sender: string } | null;
+  onCancelReply?: () => void;
+  onReactMessage?: (messageId: string, emoji: string) => Promise<void> | void;
 }
 
-const ChatArea: React.FC<ChatAreaProps> = ({ selectedChat, messages, onSendMessage, onBackToChats }) => {
+const ChatArea: React.FC<ChatAreaProps> = ({ selectedChat, messages, onSendMessage, onBackToChats, disabled, projectName, onDeleteMessage, onReplyMessage, replyContext, onCancelReply, onReactMessage }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages are added
@@ -41,16 +55,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({ selectedChat, messages, onSendMessa
               <ArrowLeft className="w-5 h-5 text-gray-600" />
             </button>
           )}
-          <h2 className="text-lg font-bold text-black">
-            {selectedChat === '1' && 'Luxury Resort Development'}
-            {selectedChat === '2' && 'Office Complex Renovation'}
-            {selectedChat === '3' && 'Shopping Mall Expansion'}
-            {selectedChat === '4' && 'Residential Tower'}
-            {selectedChat === '5' && 'Tech Campus Construction'}
-            {selectedChat === '6' && 'Hospital Wing Addition'}
-            {selectedChat === '7' && 'Sports Complex'}
-            {!selectedChat && 'Select a Project Chat'}
-          </h2>
+          <h2 className="text-lg font-bold text-black">{projectName || 'Select a Project Chat'}</h2>
         </div>
       </div>
       
@@ -60,6 +65,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({ selectedChat, messages, onSendMessa
           <MessageBubble
             key={message.id}
             message={message}
+            onDelete={onDeleteMessage}
+            onReply={(m) => onReplyMessage?.(m)}
+            onReact={(id, emoji) => onReactMessage?.(id, emoji)}
           />
         ))}
         {/* Invisible element to scroll to */}
@@ -68,7 +76,12 @@ const ChatArea: React.FC<ChatAreaProps> = ({ selectedChat, messages, onSendMessa
       
       {/* Message Input */}
       <div className="p-3 sm:p-4 border-t border-border-gray">
-        <MessageInput onSendMessage={onSendMessage} />
+        <MessageInput
+          onSendMessage={onSendMessage}
+          disabled={disabled}
+          replyContext={replyContext}
+          onCancelReply={onCancelReply}
+        />
       </div>
     </div>
   );

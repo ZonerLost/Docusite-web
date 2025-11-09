@@ -17,10 +17,10 @@ interface MemberOption {
 }
 
 const DEFAULT_MEMBERS: MemberOption[] = [
-  { id: '1', name: 'Mike Ross', avatar: '/avatar.png' },
-  { id: '2', name: 'Harvey Specter', avatar: '/avatar.png' },
-  { id: '3', name: 'Louis Litt', avatar: '/avatar.png' },
-  { id: '4', name: 'Donna Paulsen', avatar: '/avatar.png' }
+  { id: '1', name: 'Mike Ross', avatar: '' },
+  { id: '2', name: 'Harvey Specter', avatar: '' },
+  { id: '3', name: 'Louis Litt', avatar: '' },
+  { id: '4', name: 'Donna Paulsen', avatar: '' }
 ];
 
 const NotesModal: React.FC<NotesModalProps> = ({ isOpen, onClose, onAdd, title = 'Add Notes' }) => {
@@ -358,7 +358,7 @@ console.log('Hello, World!');</code></pre>
                           resetMentions();
                         }}
                       >
-                        <Avatar src={m.avatar || '/avatar.png'} alt={m.name} size="sm" />
+                        <Avatar src={m.avatar || undefined} alt={m.name} name={m.name} size="sm" />
                         <span className="text-black">{m.name}</span>
                       </li>
                     ))}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Button from '@/components/ui/Button';
 import FormInput from '@/components/ui/FormInput';
 import { PDFIcon, SearchIcon, EyeIcon } from '@/components/ui/Icons';
@@ -13,6 +13,7 @@ import {
   RedoIcon,
   EraserIcon
 } from 'lucide-react';
+import { useClickOutside } from '@/hooks/useClickOutside';
 
 type AnnotationTool = 'text' | 'shape' | 'image' | 'note' | 'highlight' | 'draw' | 'eraser';
 
@@ -32,6 +33,12 @@ interface DocumentViewerHeaderProps {
   onToolSelect: (tool: AnnotationTool | null) => void;
   onUndo: () => void;
   onRedo: () => void;
+  categories?: { name: string; count: number }[];
+  onCategoryClick?: (name: string) => void;
+  penColor?: 'black' | 'red' | 'blue' | 'green' | 'yellow';
+  penSize?: 'small' | 'medium' | 'large';
+  onPenSettingsChange?: (cfg: { color?: 'black' | 'red' | 'blue' | 'green' | 'yellow'; size?: 'small' | 'medium' | 'large' }) => void;
+  onAddPicturesWithNotes?: (files: File[], note: string) => void;
 }
 
 const DocumentViewerHeader: React.FC<DocumentViewerHeaderProps> = ({
@@ -50,8 +57,53 @@ const DocumentViewerHeader: React.FC<DocumentViewerHeaderProps> = ({
   onToolSelect,
   onUndo,
   onRedo,
+  categories,
+  onCategoryClick,
+  penColor,
+  penSize,
+  onPenSettingsChange,
+  onAddPicturesWithNotes,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [penMenuOpen, setPenMenuOpen] = useState(false);
+  const [pressTimer, setPressTimer] = useState<number | null>(null);
+  const [penMenuPos, setPenMenuPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
+  const penBtnRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const pressPosRef = useRef<{ x: number; y: number } | null>(null);
+  const closeMenu = () => setPenMenuOpen(false);
+
+  useClickOutside(menuRef, () => setPenMenuOpen(false), {
+    enabled: penMenuOpen,
+    ignoreRefs: [penBtnRef],
+  });
+
+  // Recompute menu style (fixed position; clamp to viewport)
+  useEffect(() => {
+    if (!penMenuOpen) return;
+    const adjust = () => {
+      const margin = 8;
+      const w = menuRef.current?.offsetWidth || 160;
+      const h = menuRef.current?.offsetHeight || 120;
+      let x = penMenuPos.x;
+      let y = penMenuPos.y;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      if (x + w + margin > vw) x = Math.max(margin, vw - w - margin);
+      if (y + h + margin > vh) y = Math.max(margin, vh - h - margin);
+      if (x < margin) x = margin;
+      if (y < margin) y = margin;
+      setMenuStyle({ left: x, top: y, position: 'fixed' });
+    };
+    // Next tick to ensure menu has dimensions
+    const id = window.setTimeout(adjust, 0);
+    window.addEventListener('resize', adjust);
+    return () => {
+      window.clearTimeout(id);
+      window.removeEventListener('resize', adjust);
+    };
+  }, [penMenuOpen, penMenuPos]);
   const renderAnnotationTools = () => {
     if (activeTab !== 'annotate') return null;
 
@@ -68,17 +120,71 @@ const DocumentViewerHeader: React.FC<DocumentViewerHeaderProps> = ({
         >
           <TypeIcon className="w-5 h-5" />
         </button>
-        <button
-          onClick={() => onToolSelect(selectedTool === 'draw' ? null : 'draw')}
-          className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 ${
-            selectedTool === 'draw' 
-              ? 'bg-action text-white shadow-lg' 
-              : 'bg-white text-action hover:bg-action/10 hover:shadow-md'
-          }`}
-          title="Draw"
-        >
-          <PencilIcon className="w-5 h-5" />
-        </button>
+        <div className="relative">
+          <button
+            ref={penBtnRef}
+            onClick={() => onToolSelect(selectedTool === 'draw' ? null : 'draw')}
+            onContextMenu={(e) => { e.preventDefault(); setPenMenuPos({ x: e.clientX, y: e.clientY }); setPenMenuOpen(true); }}
+            onMouseDown={(e) => {
+              pressPosRef.current = { x: e.clientX, y: e.clientY };
+              const id = window.setTimeout(() => {
+                const p = pressPosRef.current;
+                if (p) setPenMenuPos(p);
+                else if (penBtnRef.current) {
+                  const r = penBtnRef.current.getBoundingClientRect();
+                  setPenMenuPos({ x: r.right, y: r.bottom });
+                }
+                setPenMenuOpen(true);
+              }, 550);
+              setPressTimer(id);
+            }}
+            onMouseUp={() => { if (pressTimer) { clearTimeout(pressTimer); setPressTimer(null); } }}
+            onMouseLeave={() => { if (pressTimer) { clearTimeout(pressTimer); setPressTimer(null); } }}
+            className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 ${
+              selectedTool === 'draw' 
+                ? 'bg-action text-white shadow-lg' 
+                : 'bg-white text-action hover:bg-action/10 hover:shadow-md'
+            }`}
+            title="Draw"
+          >
+            <PencilIcon className="w-5 h-5" />
+          </button>
+          {penMenuOpen && (
+            <div
+              id="pen-menu"
+              ref={menuRef}
+              className="fixed z-[100] w-40 bg-white border border-border-gray rounded-md shadow-lg p-2"
+              style={menuStyle}
+            >
+              <div className="mb-1 text-[11px] text-text-gray uppercase tracking-wide px-1">Color</div>
+              <div className="flex flex-wrap gap-1 mb-2 px-1">
+                {(['black','red','blue','green','yellow'] as const).map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => { onPenSettingsChange?.({ color: c }); closeMenu(); }}
+                    className={`px-2 py-1 rounded text-xs border ${penColor===c? 'bg-action text-white border-action':'bg-white text-black hover:bg-light-gray border-border-gray'}`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+              <div className="mb-1 text-[11px] text-text-gray uppercase tracking-wide px-1">Size</div>
+              <div className="flex flex-wrap gap-1 px-1">
+                {(['small','medium','large'] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => { onPenSettingsChange?.({ size: s }); closeMenu(); }}
+                    className={`px-2 py-1 rounded text-xs border ${penSize===s? 'bg-action text-white border-action':'bg-white text-black hover:bg-light-gray border-border-gray'}`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
         <button
           onClick={() => onToolSelect(selectedTool === 'eraser' ? null : 'eraser')}
           className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 ${
@@ -146,13 +252,21 @@ const DocumentViewerHeader: React.FC<DocumentViewerHeaderProps> = ({
               </h1>
             </div>
           </div>
-          {/* Category Heading */}
-          {selectedFile?.category && (
-            <div className="flex items-center gap-2 ml-11">
-              <span className="text-xs text-text-gray">Category:</span>
-              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-action/10 text-action border border-action/20">
-                {selectedFile.category}
-              </span>
+          {/* Category Chips under title */}
+          {Array.isArray(categories) && categories.length > 0 && (
+            <div className="flex items-center gap-2 ml-11 flex-wrap">
+              {categories.map((c) => (
+                <button
+                  key={c.name}
+                  type="button"
+                  onClick={() => onCategoryClick?.(c.name)}
+                  className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-action/10 text-action border border-action/20 hover:bg-action/15"
+                  title={`Open ${c.name}`}
+                >
+                  <span>{c.name}</span>
+                  <span className="ml-1 text-[10px] text-action/70">{c.count}</span>
+                </button>
+              ))}
             </div>
           )}
         </div>
@@ -229,11 +343,11 @@ const DocumentViewerHeader: React.FC<DocumentViewerHeaderProps> = ({
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onAdd={(pictures, note) => {
-          // Handle the uploaded pictures and notes
-          console.log('Pictures uploaded from header:', pictures);
-          console.log('Note added from header:', note);
-          // Close modal after handling
-          setIsModalOpen(false);
+          try {
+            onAddPicturesWithNotes?.(pictures, note);
+          } finally {
+            setIsModalOpen(false);
+          }
         }}
       />
     </div>

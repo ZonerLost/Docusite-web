@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 type StoredProject = {
   id: string;
@@ -15,7 +15,7 @@ interface ProjectContentProps {
   project: StoredProject;
 }
 
-const buildProjectHtml = (project: StoredProject) => {
+const buildProjectHtml = (project: StoredProject, createdDate: string) => {
   const safe = (v?: string) => v || 'Not specified';
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -50,7 +50,7 @@ const buildProjectHtml = (project: StoredProject) => {
         <div style="font-size: 12px; color: #374151; line-height: 1.6;">
           <div style="margin-bottom: 6px;"><strong style="color: #1f2937;">Deadline:</strong> ${safe(project.deadline)}</div>
           <div style="margin-bottom: 6px;"><strong style="color: #1f2937;">Team Size:</strong> ${String(project.members || 0)} members</div>
-          <div style="margin-bottom: 6px;"><strong style="color: #1f2937;">Created:</strong> ${new Date().toLocaleDateString()}</div>
+          <div style="margin-bottom: 6px;"><strong style="color: #1f2937;">Created:</strong> ${createdDate}</div>
         </div>
       </div>
     </div>
@@ -63,7 +63,13 @@ const buildProjectHtml = (project: StoredProject) => {
 };
 
 const ProjectContent: React.FC<ProjectContentProps> = ({ project }) => {
-  const contentHtml = buildProjectHtml(project);
+  const [currentDate, setCurrentDate] = useState<string>('N/A');
+
+  useEffect(() => {
+    setCurrentDate(new Date().toLocaleDateString());
+  }, []);
+
+  const contentHtml = useMemo(() => buildProjectHtml(project, currentDate), [project, currentDate]);
 
   return (
     <>
@@ -79,7 +85,7 @@ const ProjectContent: React.FC<ProjectContentProps> = ({ project }) => {
           </div>
         </div>
         <div className="text-xs text-gray-600 bg-white px-3 py-2 rounded-lg border border-gray-200 font-medium self-start sm:self-auto">
-          {new Date().toLocaleDateString()}
+          {currentDate}
         </div>
       </div>
 

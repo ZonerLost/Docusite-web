@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { DocIcon, DashboardIcon, MessagesIcon, SettingsIcon, LogoutIcon, CollapseIcon } from '../ui/Icons';
 import { XIcon } from 'lucide-react';
-import { useTranslation } from '@/hooks/useTranslation';
+import useTranslation from '@/hooks/useTranslation';
 import Image from 'next/image';
 
 interface SidebarProps {

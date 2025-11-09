@@ -56,14 +56,14 @@ const ActionBar: React.FC<ActionBarProps> = ({ searchQuery, onSearchChange, onCr
         />
 
         {/* Filters Button */}
-        <Button
+        {/* <Button
           variant="outline"
           size="md"
           className="w-full sm:w-auto justify-center sm:justify-start bg-light-blue border-action text-action hover:bg-light-blue/80"
         >
           <FilterIcon className="w-4 h-4 mr-2" />
           <span className="text-sm sm:text-base">Filters</span>
-        </Button>
+        </Button> */}
 
         {/* Create New Project Button */}
         <Button

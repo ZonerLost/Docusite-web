@@ -6,7 +6,7 @@ import NotificationsSection from './NotificationsSection';
 import PasswordSection from './PasswordSection';
 import SettingsActionButtons from './SettingsActionButtons';
 import { personalInfoSchema, passwordChangeSchema, PersonalInfoFormValues, PasswordChangeFormValues } from '@/lib/validation';
-import { useUser } from '@/contexts/UserContext';
+import { useUser } from '@/context/UserContext';
 
 interface PersonalInfoData {
   fullName: string;
@@ -20,7 +20,7 @@ interface AccountSettingsTabProps {
     password: string;
   };
   notificationsEnabled: boolean;
-  profilePicture: string;
+  profilePicture?: string;
   onInputChange: (field: string, value: string) => void;
   onToggleNotifications: (enabled: boolean) => void;
   onUpdateInformation: (values: any) => void;
@@ -50,24 +50,24 @@ const AccountSettingsTab: React.FC<AccountSettingsTabProps> = ({
     notificationsEnabled
   };
 
-  const handleSubmit = (values: any, { setSubmitting, resetForm }: any) => {
-    console.log('Settings form submitted:', values);
-    
+  const handleSubmit = async (values: any, { setSubmitting, resetForm }: any) => {
     // Call the parent's update handler with the form values
-    onUpdateInformation(values);
-    setSubmitting(false);
-    
-    // Clear password fields after successful submission
-    resetForm({
-      values: {
-        fullName: values.fullName, // Keep the updated name
-        email: values.email, // Keep the updated email
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: '',
-        notificationsEnabled
-      }
-    });
+    try {
+      await onUpdateInformation(values);
+      // Clear password fields after successful submission
+      resetForm({
+        values: {
+          fullName: values.fullName, // Keep the updated name
+          email: values.email, // Keep the updated email
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: '',
+          notificationsEnabled
+        }
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleReset = (resetForm: any) => {

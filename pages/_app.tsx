@@ -1,12 +1,15 @@
 import type { AppProps } from 'next/app'
+import Head from 'next/head'
 import { useRouter } from 'next/router'
 import { Inter } from 'next/font/google'
 import MainLayout from '@/components/layout/MainLayout'
-import { UserProvider } from '@/contexts/UserContext'
+import { UserProvider } from '@/context/UserContext'
 import PerformanceMonitor from '@/components/ui/PerformanceMonitor'
 import '../app/globals.css'
 import NProgress from 'nprogress'
+import NotificationsGate from '@/components/providers/NotificationsGate'
 import { useEffect } from 'react'
+import { ensureSignedIn } from '@/lib/auth.init'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -34,11 +37,21 @@ export default function App({ Component, pageProps }: AppProps) {
       router.events.off('routeChangeError', handleComplete)
     }
   }, [router.events])
+
+  // Ensure we have an authenticated Firebase user (anonymous if needed)
+  useEffect(() => {
+    ensureSignedIn().catch(() => {/* ignore */})
+  }, [])
   
   return (
     <UserProvider>
       <div className={inter.className}>
+        <Head>
+          <title>Docusite</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+        </Head>
         <PerformanceMonitor enabled={process.env.NODE_ENV === 'development'} />
+        <NotificationsGate />
         {isAuthPage ? (
           <Component {...pageProps} />
         ) : (

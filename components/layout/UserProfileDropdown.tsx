@@ -1,6 +1,9 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef } from 'react';
+import Avatar from '@/components/ui/Avatar';
 import { useRouter } from 'next/router';
-import { UserIcon, SettingsIcon, LogOutIcon, HelpCircleIcon, BellIcon } from 'lucide-react';
+import { UserIcon, LogOutIcon, HelpCircleIcon, BellIcon } from 'lucide-react';
+import { useClickOutside } from '@/hooks/useClickOutside';
+import DropdownPanel from '@/components/ui/DropdownPanel';
 
 interface UserProfileDropdownProps {
   isOpen: boolean;
@@ -20,22 +23,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({
   const router = useRouter();
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        onClose();
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isOpen, onClose]);
+  useClickOutside(dropdownRef, () => onClose(), { enabled: isOpen });
 
   const handleProfileClick = () => {
     // Check if we're already on the settings page
@@ -78,23 +66,23 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({
     onClose();
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div
+    <DropdownPanel
       ref={dropdownRef}
-      className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-lg border border-border-gray z-50 overflow-hidden animate-scale-in"
-      style={{
-        animation: 'scaleIn 0.2s ease-out'
-      }}
+      isOpen={isOpen}
+      align="right"
+      className="overflow-hidden animate-scale-in"
+      style={{ animation: 'scaleIn 0.2s ease-out' }}
     >
       {/* User Info Header */}
       <div className="p-4 border-b border-border-gray">
         <div className="flex items-center space-x-3">
-          <img
-            src={userAvatar || "/avatar.png"}
+          <Avatar
+            src={userAvatar || undefined}
             alt={userName}
-            className="w-10 h-10 rounded-full object-cover"
+            name={userName}
+            size="md"
+            className="w-10 h-10"
           />
           <div>
             <p className="font-semibold text-black">{userName}</p>
@@ -141,7 +129,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({
           <span className="text-black">Sign Out</span>
         </button>
       </div>
-    </div>
+    </DropdownPanel>
   );
 };
 

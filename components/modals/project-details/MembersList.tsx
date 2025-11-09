@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
+import { removeProjectMember } from '@/lib/projects';
+import { toast } from 'react-hot-toast';
+import { checkProjectPermission } from '@/lib/permissions';
 
 interface Member {
   id: string;
+  email?: string;
   name: string;
   role: string;
   avatar: string;
@@ -13,29 +17,27 @@ interface MembersListProps {
   projectId: string;
   memberCount: number;
   onAddMemberClick?: () => void;
+  collaborators?: { uid: string; email?: string; name: string; role: string; photoUrl?: string }[];
 }
 
-const MembersList: React.FC<MembersListProps> = ({ projectId, memberCount, onAddMemberClick }) => {
-  const [members, setMembers] = useState<Member[]>([
-    {
-      id: '1',
-      name: 'Mike Ross',
-      role: 'Contractor',
-      avatar: '/avatar.png'
-    },
-    {
-      id: '2',
-      name: 'Harvey Specter',
-      role: 'Contractor',
-      avatar: '/avatar.png'
-    },
-    {
-      id: '3',
-      name: 'Louis Litt',
-      role: 'Contractor',
-      avatar: '/avatar.png'
+const MembersList: React.FC<MembersListProps> = ({ projectId, memberCount, onAddMemberClick, collaborators }) => {
+  const [members, setMembers] = useState<Member[]>([]);
+
+  React.useEffect(() => {
+    if (collaborators && collaborators.length) {
+      setMembers(
+        collaborators.map((c, idx) => ({
+          id: c.uid || c.email || `local-${idx}-${c.name}`,
+          email: c.email,
+          name: c.name,
+          role: c.role,
+          avatar: c.photoUrl || '',
+        }))
+      );
+    } else {
+      setMembers([]);
     }
-  ]);
+  }, [collaborators]);
 
   const handleAddMember = () => {
     if (onAddMemberClick) onAddMemberClick();
@@ -46,13 +48,31 @@ const MembersList: React.FC<MembersListProps> = ({ projectId, memberCount, onAdd
       id: Date.now().toString(),
       name: memberData.name,
       role: memberData.role,
-      avatar: '/avatar.png'
+      avatar: ''
     };
     setMembers([...members, newMember]);
   };
 
-  const handleRemoveMember = (memberId: string) => {
-    setMembers(members.filter(member => member.id !== memberId));
+  const handleRemoveMember = async (member: Member) => {
+    const prev = members;
+    setMembers((curr) => curr.filter((m) => m.id !== member.id));
+
+    try {
+      const ok = await checkProjectPermission(projectId);
+      if (!ok) { setMembers(prev); return; }
+      const uid = member.id && !member.id.includes('@') && !member.id.startsWith('local-') ? member.id : undefined;
+      await removeProjectMember(projectId, { uid, email: member.email });
+      toast.success('Member removed');
+    } catch (e: any) {
+      setMembers(prev);
+      const code = e?.code || e?.message || '';
+      const msg = code === 'permission-denied'
+        ? 'Permission denied. Only the project owner can update.'
+        : code === 'invalid-operation'
+          ? 'Cannot remove the project owner.'
+          : 'Failed to remove member';
+      toast.error(msg);
+    }
   };
 
   return (
@@ -77,8 +97,9 @@ const MembersList: React.FC<MembersListProps> = ({ projectId, memberCount, onAdd
           >
             <div className="flex items-center gap-3">
               <Avatar 
-                src={member.avatar} 
-                alt={member.name} 
+                src={member.avatar || undefined}
+                alt={member.name}
+                name={member.name}
                 size="md"
                 className="w-10 h-10"
               />
@@ -88,7 +109,7 @@ const MembersList: React.FC<MembersListProps> = ({ projectId, memberCount, onAdd
               </div>
             </div>
             <button
-              onClick={() => handleRemoveMember(member.id)}
+              onClick={() => handleRemoveMember(member)}
               className="px-2 py-1 bg-cancelled-bg text-cancelled-color rounded-md text-xs font-medium hover:bg-red-50 transition-colors"
             >
               Remove

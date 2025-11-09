@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { CheckIcon } from '@/components/ui/Icons';
 import Avatar from '@/components/ui/Avatar';
 
@@ -18,7 +18,7 @@ interface ChatEntryProps {
   onClick: () => void;
 }
 
-const ChatEntry: React.FC<ChatEntryProps> = ({ chat, isSelected, onClick }) => {
+const ChatEntryComponent: React.FC<ChatEntryProps> = ({ chat, isSelected, onClick }) => {
   return (
     <div
       className={`p-3 border-b-2 border-border-gray cursor-pointer hover:bg-light-gray transition-colors relative ${
@@ -44,8 +44,8 @@ const ChatEntry: React.FC<ChatEntryProps> = ({ chat, isSelected, onClick }) => {
           {/* User Avatar and Message */}
           <div className="flex items-center space-x-2">
             <Avatar
-              src="/avatar.png"
-              alt="User"
+              alt={chat.name}
+              name={chat.name}
               size="xs"
             />
             <div className="flex items-center space-x-1 flex-1 min-w-0">
@@ -63,5 +63,7 @@ const ChatEntry: React.FC<ChatEntryProps> = ({ chat, isSelected, onClick }) => {
     </div>
   );
 };
+
+const ChatEntry = memo(ChatEntryComponent);
 
 export default ChatEntry;

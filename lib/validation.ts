@@ -186,6 +186,8 @@ export interface SignupFormValues {
   email: string;
   password: string;
   agreeToTerms: boolean;
+  photo?: File | null;
+  fcmToken?: string;
 }
 
 // Verification code form validation schema

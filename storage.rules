@@ -1,0 +1,50 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuthed() { 
+      return request.auth != null; 
+    }
+
+    /* ---------- USER FILES (avatars, exports, etc.) ---------- */
+    match /users/{uid}/{path=**} {
+      allow read:  if isAuthed();
+      allow write: if isAuthed()
+                   && request.auth.uid == uid
+                   && request.resource.size < 10 * 1024 * 1024; // 10MB
+    }
+
+    /* ---------- PROJECT ATTACHMENTS ---------- */
+    match /projects/{projectId}/{ownerUid}/{path=**} {
+      allow read:  if isAuthed();
+      allow write: if isAuthed()
+                   && request.resource.size < 20 * 1024 * 1024; // 20MB
+    }
+
+    /* ---------- PROJECT FILES (PDF uploads) ---------- */
+    match /project_files/{projectId}/{fileName} {
+      allow read: if isAuthed();
+      allow write: if isAuthed()
+                   && request.resource.size < 20 * 1024 * 1024
+                   && request.resource.contentType.matches('application/pdf');
+    }
+
+    /* ---------- GROUP CHAT ATTACHMENTS ---------- */
+    match /group_chat/{projectId}/{chatId}/{path=**} {
+      // No auth required; prevent unauthorized errors in chats.
+      // Support resumable uploads (request.resource may be null on session start).
+      // Enforce 20MB on the final commit where request.resource is present.
+      allow read, write: if request.resource == null || request.resource.size < 20 * 1024 * 1024;
+    }
+
+    /* ---------- NOTIFICATIONS (if ever needed to store media) ---------- */
+    match /notifications/{userEmail}/{path=**} {
+      allow read, write: if isAuthed();
+    }
+
+    /* ---------- DEFAULT FALLBACK ---------- */
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

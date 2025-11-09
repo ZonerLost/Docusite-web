@@ -6,7 +6,7 @@ import VerificationCodeInput from '@/components/ui/VerificationCodeInput';
 import SuccessModal from '@/components/ui/SuccessModal';
 import { DocIcon } from '@/components/ui/Icons';
 import { verificationSchema, VerificationFormValues } from '@/lib/validation';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'next/router';
 
 interface VerificationFormProps {
   email?: string;

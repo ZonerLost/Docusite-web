@@ -1,11 +1,81 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+// ===== TEMP DISABLED: imports used only for editing =====
+// import Button from '@/components/ui/Button';
+// import { db } from '@/lib/firebase-client';
+// import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+// import { toast } from 'react-hot-toast';
 
 const TermsTab: React.FC = () => {
+  // ===== TEMP DISABLED: state used only for editing =====
+  // const [isEditing, setIsEditing] = useState(false);
+  // const [isSaving, setIsSaving] = useState(false);
+
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string>('N/A');
+
+  useEffect(() => {
+    setLastUpdated(new Date().toLocaleDateString());
+  }, []);
+
+  // ===== TEMP DISABLED: edit handlers =====
+  // const onToggleEdit = useCallback(() => {
+  //   setIsEditing((v) => !v);
+  //   // Focus content area when entering edit mode
+  //   setTimeout(() => {
+  //     if (!isEditing && contentRef.current) {
+  //       try { contentRef.current.focus(); } catch {}
+  //     }
+  //   }, 0);
+  // }, [isEditing]);
+
+  // const onSave = useCallback(async () => {
+  //   if (!contentRef.current) return;
+  //   const html = contentRef.current.innerHTML || '';
+  //   try {
+  //     setIsSaving(true);
+  //     await setDoc(
+  //       doc(db, 'app_policies', 'terms_and_conditions'),
+  //       { html, updatedAt: serverTimestamp() as any },
+  //       { merge: true }
+  //     );
+  //     toast.success('Terms & Conditions updated');
+  //     setIsEditing(false);
+  //   } catch (e: any) {
+  //     console.error('[TermsTab] Failed to update terms', e);
+  //     const msg = typeof e?.message === 'string' ? e.message : 'Failed to update terms';
+  //     toast.error(msg);
+  //   } finally {
+  //     setIsSaving(false);
+  //   }
+  // }, []);
+
   return (
     <div className="space-y-4 w-full">
       <div className="border border-border-gray shadow-sm rounded-xl">
         <div className="p-6 space-y-6">
-          <div className="space-y-6">
+          {/* ===== TEMP DISABLED: Edit button toolbar =====
+          <div className="flex items-center justify-end">
+            <Button
+              variant={isEditing ? 'primary' : 'outline'}
+              size="sm"
+              onClick={isEditing ? onSave : onToggleEdit}
+              disabled={isSaving}
+              aria-label={isEditing ? 'Save & Update' : 'Edit'}
+              title={isEditing ? 'Save & Update' : 'Edit'}
+            >
+              {isEditing ? (isSaving ? 'Saving…' : 'Save & Update') : 'Edit'}
+            </Button>
+          </div>
+          ===== /TEMP DISABLED ===== */}
+
+          <div
+            ref={contentRef}
+            // View-only for now:
+            contentEditable={false}                 // <-- when re-enabling, change back to: contentEditable={isEditing}
+            suppressContentEditableWarning
+            className="space-y-6"                   // <-- when re-enabling, restore the conditional outline class
+            // was: className={`space-y-6 ${isEditing ? 'outline outline-1 outline-action/30 rounded-lg p-2' : ''}`}
+          >
             <section>
               <h3 className="text-xl font-bold text-black mb-4">Terms of Service Agreement</h3>
               <div className="space-y-3 text-text-gray text-sm leading-relaxed">
@@ -33,9 +103,7 @@ const TermsTab: React.FC = () => {
             <section>
               <h3 className="text-xl font-bold text-black mb-4">Service Description</h3>
               <div className="space-y-3 text-text-gray text-sm leading-relaxed">
-                <p>
-                  DocuSite provides a cloud-based document management platform that allows users to:
-                </p>
+                <p>DocuSite provides a cloud-based document management platform that allows users to:</p>
                 <ul className="list-disc list-inside ml-4 space-y-1">
                   <li>Upload, store, and organize documents and files</li>
                   <li>Collaborate on projects with team members</li>
@@ -58,7 +126,7 @@ const TermsTab: React.FC = () => {
                     <li>You are responsible for all activities that occur under your account</li>
                   </ul>
                 </div>
-                
+
                 <div>
                   <h4 className="font-semibold text-black mb-2">Prohibited Uses</h4>
                   <p>You agree not to use DocuSite to:</p>
@@ -88,27 +156,21 @@ const TermsTab: React.FC = () => {
             <section>
               <h3 className="text-xl font-bold text-black mb-4">Payment Terms</h3>
               <div className="space-y-3 text-text-gray text-sm leading-relaxed">
-                <p>
-                  Some features of DocuSite may require payment. By subscribing to paid services, you agree to:
-                </p>
+                <p>Some features of DocuSite may require payment. By subscribing to paid services, you agree to:</p>
                 <ul className="list-disc list-inside ml-4 space-y-1">
                   <li>Pay all fees and charges associated with your subscription</li>
                   <li>Provide accurate billing information</li>
                   <li>Authorize us to charge your payment method for recurring fees</li>
                   <li>Notify us of any changes to your payment information</li>
                 </ul>
-                <p>
-                  All fees are non-refundable unless otherwise specified. We reserve the right to change our pricing with 30 days' notice.
-                </p>
+                <p>All fees are non-refundable unless otherwise specified. We reserve the right to change our pricing with 30 days' notice.</p>
               </div>
             </section>
 
             <section>
               <h3 className="text-xl font-bold text-black mb-4">Service Availability and Modifications</h3>
               <div className="space-y-3 text-text-gray text-sm leading-relaxed">
-                <p>
-                  We strive to maintain high service availability but cannot guarantee uninterrupted access. We may:
-                </p>
+                <p>We strive to maintain high service availability but cannot guarantee uninterrupted access. We may:</p>
                 <ul className="list-disc list-inside ml-4 space-y-1">
                   <li>Perform scheduled maintenance that may temporarily affect service</li>
                   <li>Modify or discontinue features with reasonable notice</li>
@@ -133,9 +195,7 @@ const TermsTab: React.FC = () => {
             <section>
               <h3 className="text-xl font-bold text-black mb-4">Termination</h3>
               <div className="space-y-3 text-text-gray text-sm leading-relaxed">
-                <p>
-                  Either party may terminate this agreement at any time. Upon termination:
-                </p>
+                <p>Either party may terminate this agreement at any time. Upon termination:</p>
                 <ul className="list-disc list-inside ml-4 space-y-1">
                   <li>Your access to DocuSite will be suspended</li>
                   <li>You may export your data for 30 days after termination</li>
@@ -148,15 +208,13 @@ const TermsTab: React.FC = () => {
             <section>
               <h3 className="text-xl font-bold text-black mb-4">Contact Information</h3>
               <div className="space-y-3 text-text-gray text-sm leading-relaxed">
-                <p>
-                  If you have any questions about these Terms of Service, please contact us at:
-                </p>
+                <p>If you have any questions about these Terms of Service, please contact us at:</p>
                 <div className="bg-gray-50 p-4 rounded-lg">
                   <p><strong>Email:</strong> legal@docusite.com</p>
                   <p><strong>Address:</strong> DocuSite Legal Department, 123 Business Ave, Suite 100, City, State 12345</p>
                 </div>
                 <p className="text-xs text-gray-500 mt-4">
-                  Last updated: {new Date().toLocaleDateString()}
+                  Last updated: {lastUpdated}
                 </p>
               </div>
             </section>

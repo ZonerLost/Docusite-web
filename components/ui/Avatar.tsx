@@ -36,15 +36,19 @@ const Avatar: React.FC<AvatarProps> = ({
     }
   };
 
-  const getInitials = () => {
-    if (!name) return '?';
-    return name
-      .split(' ')
-      .map(word => word.charAt(0))
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
+  const getInitial = () => {
+    const base = (name || alt || '').trim();
+    if (!base) return '?';
+    return base.charAt(0).toUpperCase();
   };
+
+  const isValidSrc = React.useMemo(() => {
+    const s = (src || '').trim();
+    if (!s) return false;
+    // Treat placeholder as no image
+    if (s.endsWith('/avatar.png') || s === '/avatar.png') return false;
+    return true;
+  }, [src]);
 
   const sizeClasses = getSizeClasses();
 
@@ -54,9 +58,9 @@ const Avatar: React.FC<AvatarProps> = ({
       sizeClasses,
       className
     )}>
-      {src ? (
+      {isValidSrc ? (
         <Image
-          src={src}
+          src={src as string}
           alt={alt}
           width={size === 'xs' ? 24 : size === 'sm' ? 32 : size === 'md' ? 40 : size === 'lg' ? 48 : 64}
           height={size === 'xs' ? 24 : size === 'sm' ? 32 : size === 'md' ? 40 : size === 'lg' ? 48 : 64}
@@ -64,12 +68,12 @@ const Avatar: React.FC<AvatarProps> = ({
         />
       ) : showInitials ? (
         <span className="font-bold text-action">
-          {getInitials()}
+          {getInitial()}
         </span>
       ) : (
         <div className="w-full h-full bg-avatar-bg flex items-center justify-center">
           <span className="font-bold text-action">
-            {getInitials()}
+            {getInitial()}
           </span>
         </div>
       )}

@@ -8,12 +8,20 @@ interface CategorySelectionModalProps {
   onCategorySelect: (category: string) => void;
 }
 
-const categories = [
-  'STRUCTURAL',
-  'MEP',
-  'Architectural',
-  'Interior/ Finishes',
-  'Others'
+// const categories = [
+//   ' STRUCTURAL',
+//   'MEP',
+//   'Architectural',
+//   'Interior/ Finishes',
+//   'Others'
+// ];
+
+export const categories = [
+  '🏛 Structural',
+  '🧱 Architectural',
+  '⚙️ MEP',
+  '🪑 Interior / Finishes',
+  '📁 Others',
 ];
 
 const CategorySelectionModal: React.FC<CategorySelectionModalProps> = ({

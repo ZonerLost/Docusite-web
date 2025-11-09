@@ -5,8 +5,8 @@ import { ExternalLink, UserPlus } from "lucide-react";
 
 interface ProjectHeaderProps {
   projectName: string;
-  onEdit: () => void;
-  onDelete: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
   onGroupChat: () => void;
   onRedirect: () => void;
   isMembersTabActive?: boolean;
@@ -37,7 +37,7 @@ const ProjectHeader: React.FC<ProjectHeaderProps> = ({
           </div>
         </button>
 
-        {isMembersTabActive && (
+        {/* {isMembersTabActive && (
           <button
             onClick={onInviteMembers}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors group relative"
@@ -48,7 +48,7 @@ const ProjectHeader: React.FC<ProjectHeaderProps> = ({
               Invite Members
             </div>
           </button>
-        )}
+        )} */}
 
         <button
           onClick={onDelete}
@@ -82,10 +82,12 @@ const ProjectHeader: React.FC<ProjectHeaderProps> = ({
         onClick={onGroupChat}
         className="flex w-full items-center gap-2 border-dashed border-action text-action bg-light-blue hover:bg-light-blue/80"
       >
-        <span>Group Chat</span>
+        <span>Project Chat</span>
       </Button>
     </div>
   );
 };
 
 export default ProjectHeader;
+
+

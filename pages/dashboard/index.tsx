@@ -2,25 +2,15 @@ import DashboardHeader from '@/components/dashboard/DashboardHeader';
 import KanbanBoard from '@/components/dashboard/KanbanBoard';
 import React, { useState, useEffect, useMemo, useCallback, Suspense, lazy } from 'react';
 import LazyWrapper from '@/components/ui/LazyWrapper';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '@/lib/firebase-client';
+import { createProject, subscribeAllProjects, subscribeProjectsForUser, ProjectCardUI } from '@/lib/projects';
+import { toast } from 'react-hot-toast';
 
 // Lazy load the modal for better performance
 const ProjectDetailsModal = lazy(() => import('@/components/modals/ProjectDetailsModal'));
 
-interface ProjectCard {
-  id: string;
-  name: string;
-  location: string;
-  team: string[];
-  lastUpdatedTime: string;
-  assignedTo: string;
-  deadlineDate?: string;
-  progress?: number;
-  status: 'all' | 'in-progress' | 'completed' | 'cancelled';
-  clientName?: string;
-  projectOwner?: string;
-  deadline?: string;
-  members?: number;
-}
+interface ProjectCard extends ProjectCardUI {}
 
 export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -153,7 +143,26 @@ export default function Dashboard() {
   ], []);
 
   // State for managing projects
-  const [projects, setProjects] = useState<ProjectCard[]>(initialProjects);
+  const [projects, setProjects] = useState<ProjectCard[]>([]);
+
+  // Subscribe to user's projects (owner + optional collaborator index)
+  useEffect(() => {
+    let stopProjects: null | (() => void) = null;
+    const unsubAuth = onAuthStateChanged(auth, (u) => {
+      // reset any existing subscription
+      if (stopProjects) {
+        try { stopProjects(); } catch {}
+        stopProjects = null;
+      }
+
+      // Admin panel view: show all projects for any authenticated user
+      stopProjects = subscribeAllProjects((items) => setProjects(items));
+    });
+    return () => {
+      unsubAuth();
+      if (stopProjects) try { stopProjects(); } catch {}
+    };
+  }, []);
 
   // Filter and sort projects based on search query and sortBy value
   const filteredAndSortedProjects = React.useMemo(() => {
@@ -180,10 +189,9 @@ export default function Dashboard() {
         return sorted.sort((a, b) => a.name.localeCompare(b.name));
       case 'date':
         return sorted.sort((a, b) => {
-          // Sort by lastUpdatedTime (most recent first)
-          const dateA = new Date(a.lastUpdatedTime);
-          const dateB = new Date(b.lastUpdatedTime);
-          return dateB.getTime() - dateA.getTime();
+          const aTs = a.lastUpdatedTs || 0;
+          const bTs = b.lastUpdatedTs || 0;
+          return bTs - aTs;
         });
       case 'status':
         return sorted.sort((a, b) => {
@@ -195,7 +203,15 @@ export default function Dashboard() {
     }
   }, [projects, sortBy, searchQuery]);
 
-  const handleProjectClick = useCallback((project: ProjectCard) => {
+  const handleProjectClick = useCallback(async (project: ProjectCard) => {
+    try {
+      const { checkProjectPermission } = await import('@/lib/permissions');
+      const ok = await checkProjectPermission(project.id);
+      if (!ok) return; // toast already shown
+    } catch {
+      // If the permission check fails unexpectedly, do not open
+      return;
+    }
     setSelectedProject(project);
     setIsModalOpen(true);
   }, []);
@@ -205,26 +221,23 @@ export default function Dashboard() {
     setSelectedProject(null);
   }, []);
 
-  const handleCreateProject = useCallback((projectData: any) => {
-    const newProject: ProjectCard = {
-      id: Date.now().toString(), // Simple ID generation
-      name: projectData.title,
-      location: projectData.location,
-      team: projectData.members && projectData.members.length > 0 
-        ? projectData.members.map((member: string) => '/avatar.png') 
-        : [], // Handle empty members array
-      lastUpdatedTime: 'Just now',
-      assignedTo: 'You',
-      deadlineDate: projectData.deadline,
-      progress: 0,
-      status: 'in-progress',
-      clientName: projectData.clientName,
-      projectOwner: 'You',
-      deadline: projectData.deadline,
-      members: projectData.members ? projectData.members.length : 0
-    };
-    
-    setProjects(prevProjects => [...prevProjects, newProject]);
+  const handleCreateProject = useCallback(async (projectData: any) => {
+    try {
+      await createProject({
+        title: projectData.title,
+        clientName: projectData.clientName,
+        location: projectData.location,
+        deadline: projectData.deadline,
+        members: projectData.members,
+        viewAccess: projectData.viewAccess,
+        editAccess: projectData.editAccess,
+      });
+      toast.success('Project created');
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to create project:', e);
+      toast.error('Failed to create project');
+    }
   }, []);
 
   return (
@@ -260,3 +273,4 @@ export default function Dashboard() {
     </>
   );
 }
+

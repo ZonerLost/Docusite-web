@@ -1,11 +1,98 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import Button from '@/components/ui/Button';
+import { db } from '@/lib/firebase-client';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { toast } from 'react-hot-toast';
 
 const PrivacyTab: React.FC = () => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string>('N/A');
+
+  useEffect(() => {
+    setLastUpdated(new Date().toLocaleDateString());
+  }, []);
+
+  const onToggleEdit = useCallback(() => {
+    setIsEditing((v) => !v);
+    // Focus content area when entering edit mode
+    setTimeout(() => {
+      if (!isEditing && contentRef.current) {
+        try { contentRef.current.focus(); } catch { }
+      }
+    }, 0);
+  }, [isEditing]);
+
+  const onSave = useCallback(async () => {
+    if (!contentRef.current) return;
+    const html = contentRef.current.innerHTML || '';
+
+    try {
+      setIsSaving(true);
+      await setDoc(
+        doc(db, 'app_policies', 'privacy_policy'),
+        {
+          html,
+          updatedAt: serverTimestamp() as any,
+        },
+        { merge: true }
+      );
+      toast.success('Privacy policy updated');
+      setIsEditing(false);
+    } catch (e: any) {
+      // eslint-disable-next-line no-console
+      console.error('[PrivacyTab] Failed to update policy', e);
+      const msg = typeof e?.message === 'string' ? e.message : 'Failed to update policy';
+      toast.error(msg);
+    } finally {
+      setIsSaving(false);
+    }
+  }, []);
+
   return (
     <div className="space-y-4 w-full">
       <div className="border border-border-gray shadow-sm rounded-xl">
         <div className="p-6 space-y-6">
-          <div className="space-y-6">
+
+{/* ////////////////////////////////For privacy edit bitton dont remove it/////////////////////
+          ////////////////////////////////////////////////////////////////////////////////////////// */}
+          {/* <div className="flex items-center justify-end">
+            <Button
+              variant={isEditing ? 'primary' : 'outline'}
+              size="sm"
+              onClick={isEditing ? onSave : onToggleEdit}
+              disabled={isSaving}
+              aria-label={isEditing ? 'Save & Update' : 'Edit'}
+              title={isEditing ? 'Save & Update' : 'Edit'}
+            >
+              {isEditing ? (isSaving ? 'Saving…' : 'Save & Update') : 'Edit'}
+            </Button>
+          </div> */}
+
+          {/* Hide the Edit button without causing unused-var errors */}
+          {false && (
+            <div className="flex items-center justify-end">
+              <Button
+                variant={isEditing ? 'primary' : 'outline'}
+                size="sm"
+                onClick={isEditing ? onSave : onToggleEdit}
+                disabled={isSaving}
+                aria-label={isEditing ? 'Save & Update' : 'Edit'}
+                title={isEditing ? 'Save & Update' : 'Edit'}
+              >
+                {isEditing ? (isSaving ? 'Saving…' : 'Save & Update') : 'Edit'}
+              </Button>
+            </div>
+          )}
+{/* /////////////////////////////////////////////////////////////////////////////////
+          //////////////////For next time use ///////////////////////////////////////// */}
+          <div
+            ref={contentRef}
+            contentEditable={isEditing}
+            suppressContentEditableWarning
+            className={`space-y-6 ${isEditing ? 'outline outline-1 outline-action/30 rounded-lg p-2' : ''}`}
+          >
             <section>
               <h3 className="text-xl font-bold text-black mb-4">Introduction</h3>
               <div className="space-y-3 text-text-gray text-sm leading-relaxed">
@@ -31,7 +118,7 @@ const PrivacyTab: React.FC = () => {
                     <li>Communications you send to us</li>
                   </ul>
                 </div>
-                
+
                 <div>
                   <h4 className="font-semibold text-black mb-2">Usage Information</h4>
                   <p>We automatically collect certain information about your use of our service:</p>
@@ -116,7 +203,7 @@ const PrivacyTab: React.FC = () => {
                   <p><strong>Address:</strong> DocuSite Privacy Team, 123 Business Ave, Suite 100, City, State 12345</p>
                 </div>
                 <p className="text-xs text-gray-500 mt-4">
-                  Last updated: {new Date().toLocaleDateString()}
+                  Last updated: {lastUpdated}
                 </p>
               </div>
             </section>

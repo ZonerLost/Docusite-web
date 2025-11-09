@@ -2,7 +2,7 @@ import React from 'react';
 import Button from '@/components/ui/Button';
 import { FlagIcon, FlagIconCode } from "react-flag-kit";
 import { SelectedLanguageIcon } from '@/components/ui/Icons';
-import { useUser } from '@/contexts/UserContext';
+import { useUser } from '@/context/UserContext';
 import { useTranslation } from '@/hooks/useTranslation';
 
 interface Language {

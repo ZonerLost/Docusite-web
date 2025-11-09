@@ -5,6 +5,9 @@ import Input from '@/components/ui/Input';
 import { DocIcon } from '@/components/ui/Icons';
 import { Mail, Check } from 'lucide-react';
 import Link from 'next/link';
+import { toast } from 'react-hot-toast';
+import { FirebaseError } from 'firebase/app';
+import { forgotPassword, niceError } from '@/services/authService';
 import { forgotPasswordSchema, ForgotPasswordFormValues } from '@/lib/validation';
 
 const ForgotPasswordForm: React.FC = () => {
@@ -12,10 +15,32 @@ const ForgotPasswordForm: React.FC = () => {
     email: ''
   };
 
-  const handleSubmit = (values: ForgotPasswordFormValues, { setSubmitting }: any) => {
-    console.log('Forgot password form submitted:', values);
-    // Handle forgot password logic here
-    setSubmitting(false);
+  const handleSubmit = async (
+    values: ForgotPasswordFormValues,
+    { setSubmitting, setStatus }: any
+  ) => {
+    setStatus?.(null);
+    try {
+      await forgotPassword(values.email);
+      toast('If an account exists, a reset link has been sent.');
+    } catch (e: unknown) {
+      const code = (e as any)?.code as string | undefined;
+      if (code === 'auth/user-not-found') {
+        // Avoid account enumeration by returning generic success
+        toast('If an account exists, a reset link has been sent.');
+      } else {
+        if (e instanceof FirebaseError) {
+          console.error('Password reset error:', { code: e.code, message: e.message });
+        } else {
+          console.error('Password reset error:', e);
+        }
+        const message = niceError(e, 'Unable to send reset link. Please try again.');
+        toast(message);
+        setStatus?.({ error: message });
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -41,6 +66,7 @@ const ForgotPasswordForm: React.FC = () => {
       <Formik
         initialValues={initialValues}
         validationSchema={forgotPasswordSchema}
+        
         onSubmit={handleSubmit}
       >
         {({ errors, touched, isSubmitting }) => (

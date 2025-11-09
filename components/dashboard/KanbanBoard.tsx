@@ -2,6 +2,9 @@
 import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import KanbanColumn from './KanbanColumn';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
+import { updateProjectStatus } from '@/lib/projects';
+import { checkProjectEditPermission } from '@/lib/permissions';
+import { toast } from 'react-hot-toast';
 
 interface Project {
   id: string;
@@ -42,7 +45,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = React.memo(({ projects, onProjec
     setColumnProjects(initialColumns);
   }, [initialColumns]);
 
-  const onDragEnd = useCallback((result: DropResult) => {
+  const onDragEnd = useCallback(async (result: DropResult) => {
     const { source, destination } = result;
     if (!destination) return;
 
@@ -51,13 +54,19 @@ const KanbanBoard: React.FC<KanbanBoardProps> = React.memo(({ projects, onProjec
 
     if (sourceColId === destColId && source.index === destination.index) return;
 
+    // Keep a snapshot for rollback on failure
+    let prevSnapshot: Record<string, Project[]> | null = null;
+    let movedProjectId: string | null = null;
+
     setColumnProjects((prev) => {
+      prevSnapshot = prev;
       const sourceItems = Array.from(prev[sourceColId] || []);
       const [moved] = sourceItems.splice(source.index, 1);
+      movedProjectId = moved?.id || null;
 
       const destItems = sourceColId === destColId ? sourceItems : Array.from(prev[destColId] || []);
 
-      // Only update status if not moving to/from "All Projects" column
+      // Only update status if not dropping into "All Projects" column
       let updatedMoved: Project = { ...moved };
       if (destColId !== 'all') {
         updatedMoved = { ...moved, status: destColId as Project['status'] };
@@ -67,9 +76,27 @@ const KanbanBoard: React.FC<KanbanBoardProps> = React.memo(({ projects, onProjec
       return {
         ...prev,
         [sourceColId]: sourceColId === destColId ? destItems : sourceItems,
-        [destColId]: destItems
+        [destColId]: destItems,
       };
     });
+
+    // Persist status change to Firestore when moved into a status column
+    if (destColId !== 'all' && movedProjectId && sourceColId !== destColId) {
+      const ok = await checkProjectEditPermission(movedProjectId);
+      if (!ok) {
+        if (prevSnapshot) setColumnProjects(prevSnapshot);
+        return;
+      }
+      updateProjectStatus(movedProjectId, destColId as 'in-progress' | 'completed' | 'cancelled')
+        .catch((err) => {
+          // Roll back optimistic update
+          if (prevSnapshot) setColumnProjects(prevSnapshot);
+          // Inform the user
+          toast.error('Failed to update project status.');
+          // eslint-disable-next-line no-console
+          console.error('updateProjectStatus failed:', err);
+        });
+    }
   }, []);
 
   const columns = [

@@ -5,6 +5,7 @@ import AddNotesModal from '@/components/modals/AddNotesModal';
 import AddPicturesWithNotesModal from '@/components/modals/AddPicturesWithNotesModal';
 import DocumentViewerHeader from '@/components/project/DocumentViewerHeader';
 import DocumentViewer from '@/components/project/DocumentViewer';
+import { useProjectFiles } from '@/hooks/useProjectFiles';
 
 type StoredProject = {
   id: string;
@@ -15,6 +16,7 @@ type StoredProject = {
   projectOwner?: string;
   deadline?: string;
   members?: number;
+  raw?: any;
 };
 
 
@@ -48,7 +50,48 @@ const ProjectDetailsDashboardPage: React.FC = () => {
   };
   const [selectedTool, setSelectedTool] = useState<'text' | 'shape' | 'image' | 'note' | 'highlight' | 'draw' | 'eraser' | null>(null);
   const [searchResults, setSearchResults] = useState<{ count: number; currentIndex: number }>({ count: 0, currentIndex: 0 });
-  const exportRef = useRef<{ undo: () => void; redo: () => void; addImageAnnotation: (imageUrl: string, note: string) => void; addMultipleImages: (imageUrls: string[], note: string) => void; domRef: HTMLDivElement | null }>(null);
+  const exportRef = useRef<{ undo: () => void; redo: () => void; addImageAnnotation: (imageUrl: string, note: string) => void; addMultipleImages: (imageUrls: string[], note: string) => void; domRef: HTMLDivElement | null; exportPagesAsImages: () => Promise<{ width: number; height: number; dataUrl: string }[]> }>(null);
+  // Extend ref type locally to call openCategory, if available
+  const viewerRef = exportRef as React.MutableRefObject<{
+    undo: () => void;
+    redo: () => void;
+    addImageAnnotation: (imageUrl: string, note: string) => void;
+    addMultipleImages: (imageUrls: string[], note: string) => void;
+    domRef: HTMLDivElement | null;
+    openCategory?: (name: string) => void;
+    addNoteAnnotation?: (text: string, x?: number, y?: number) => void;
+  } | null>;
+  const { files: allFiles } = useProjectFiles(project?.id);
+  const categories = React.useMemo(() => {
+    const map = new Map<string, number>();
+    allFiles.forEach((f) => {
+      const key = f.category || 'Others';
+      map.set(key, (map.get(key) || 0) + 1);
+    });
+    return Array.from(map.entries()).map(([name, count]) => ({ name, count }));
+  }, [allFiles]);
+  const handleHeaderCategoryClick = useCallback((name: string) => {
+    // Trigger DocumentViewer category open logic via ref
+    viewerRef.current?.openCategory?.(name);
+    setActiveTab('view');
+  }, []);
+
+
+  // Pen settings shared between header (menu) and viewer
+  const [penColor, setPenColor] = useState<'black' | 'red' | 'blue' | 'green' | 'yellow'>('black');
+  const [penSize, setPenSize] = useState<'small' | 'medium' | 'large'>('medium');
+  const handlePenSettingsChange = useCallback((cfg: { color?: 'black' | 'red' | 'blue' | 'green' | 'yellow'; size?: 'small' | 'medium' | 'large' }) => {
+    if (cfg.color) setPenColor(cfg.color);
+    if (cfg.size) setPenSize(cfg.size);
+  }, []);
+  const handleSelectFile = useCallback((file: { id: string; name: string; category?: string }) => {
+    setSelectedFile(file);
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('selectedFile', JSON.stringify(file));
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     try {
@@ -134,6 +177,10 @@ const ProjectDetailsDashboardPage: React.FC = () => {
   // Handle adding simple notes
   const handleAddSimpleNote = (note: string) => {
     handleAddNote(note);
+    try {
+      viewerRef.current?.addNoteAnnotation?.(note);
+      setActiveTab('annotate');
+    } catch {}
     setIsAddNotesOpen(false);
   };
 
@@ -240,58 +287,22 @@ const ProjectDetailsDashboardPage: React.FC = () => {
   };
 
   const handleExportPdf = useCallback(async () => {
-    console.log('Export PDF clicked, exportRef.current:', exportRef.current);
-    if (!exportRef.current || !exportRef.current.domRef) {
-      console.error('Export ref or domRef is null');
-      return;
-    }
-    
+    if (!exportRef.current) return;
     try {
-      console.log('Starting PDF export...');
-      // Dynamic import for better performance
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-        import('html2canvas'),
-        import('jspdf'),
-      ]);
-
-      const element = exportRef.current.domRef;
-      console.log('Element to export:', element);
-      
-      const canvas = await html2canvas(element, { 
-        scale: 1.5, // Reduced scale for better performance
-        backgroundColor: '#ffffff',
-        useCORS: true,
-        allowTaint: true
-      });
-      console.log('Canvas created:', canvas.width, 'x', canvas.height);
-      
-      const imgData = canvas.toDataURL('image/jpeg', 0.8); // JPEG with compression for better performance
-      console.log('Image data created, length:', imgData.length);
-
-      const pdf = new jsPDF('p', 'pt', 'a4');
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      let y = 0;
-      let remainingHeight = imgHeight;
-
-      while (remainingHeight > 0) {
-        pdf.addImage(imgData, 'JPEG', 0, y, imgWidth, imgHeight);
-        remainingHeight -= pageHeight;
-        if (remainingHeight > 0) {
-          pdf.addPage();
-          y = 0 - (imgHeight - remainingHeight);
-        }
+      const pages = await exportRef.current.exportPagesAsImages();
+      if (!pages || pages.length === 0) return;
+      const { jsPDF } = await import('jspdf');
+      const first = pages[0];
+      const pdf = new jsPDF({ orientation: 'p', unit: 'px', format: [first.width, first.height] });
+      pdf.addImage(first.dataUrl, 'JPEG', 0, 0, first.width, first.height);
+      for (let i = 1; i < pages.length; i++) {
+        const p = pages[i];
+        pdf.addPage([p.width, p.height]);
+        pdf.addImage(p.dataUrl, 'JPEG', 0, 0, p.width, p.height);
       }
-
-      console.log('PDF created, saving...');
       pdf.save(`${project?.name || 'project-details'}.pdf`);
-      console.log('PDF saved successfully');
-    } catch (error) {
-      console.error('Error generating PDF:', error);
+    } catch (err) {
+      console.error('Export failed:', err);
     }
   }, [project?.name]);
 
@@ -304,7 +315,7 @@ const ProjectDetailsDashboardPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6">
+    <div className="min-h-screen bg-gray-100 p-0">
       <DocumentViewerHeader
         projectName={project.name}
         selectedFile={selectedFile}
@@ -321,6 +332,13 @@ const ProjectDetailsDashboardPage: React.FC = () => {
         onToolSelect={setSelectedTool}
         onUndo={handleUndo}
         onRedo={handleRedo}
+        categories={categories}
+        onCategoryClick={handleHeaderCategoryClick}
+
+        penColor={penColor}
+        penSize={penSize}
+        onPenSettingsChange={handlePenSettingsChange}
+        onAddPicturesWithNotes={handleAddPicturesWithNotes}
       />
 
       <DocumentViewer
@@ -334,6 +352,9 @@ const ProjectDetailsDashboardPage: React.FC = () => {
         onAddImageNote={() => setIsAddPicturesOpen(true)}
         onUndo={handleUndo}
         onRedo={handleRedo}
+        onSelectFile={handleSelectFile}
+        penColor={penColor}
+        penSize={penSize}
       />
 
       <NotesModal
