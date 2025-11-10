@@ -57,6 +57,10 @@ export function sortCategories(categories: ProjectFilesByCategory): string[] {
   const existing = new Set(Object.keys(categories));
   const ordered = CATEGORY_DISPLAY_ORDER.filter((cat) => existing.has(cat));
   // Append any unexpected categories to the end in alphabetical order
-  const extras = Array.from(existing).filter((cat) => !ordered.includes(cat)).sort((a, b) => a.localeCompare(b));
+  // Use .some to avoid TS narrowing issue when comparing string to
+  // union of string literal types from CATEGORY_DISPLAY_ORDER
+  const extras = Array.from(existing)
+    .filter((cat) => !ordered.some((c) => c === cat))
+    .sort((a, b) => a.localeCompare(b));
   return [...ordered, ...extras];
 }
