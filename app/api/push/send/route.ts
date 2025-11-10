@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listSubscriptions, removeSubscription } from '@/lib/subscriptions';
-import { webpush } from '@/lib/webpush';
+import { webpush, isWebPushConfigured } from '@/lib/webpush';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
+  if (!isWebPushConfigured()) {
+    return NextResponse.json(
+      { ok: false, error: 'Web Push not configured. Set NEXT_PUBLIC_VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT.' },
+      { status: 500 }
+    );
+  }
   const body = await req.json().catch(() => ({}));
   const payload = JSON.stringify({
     title: body.title ?? 'Hello from Next.js',
@@ -32,4 +38,3 @@ export async function POST(req: NextRequest) {
   const ok = results.filter((r) => r.status === 'fulfilled').length;
   return NextResponse.json({ ok, total: subs.length, results });
 }
-
