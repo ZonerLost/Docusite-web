@@ -111,3 +111,7 @@ dist
 # Temporary folders
 tmp/
 temp/
+
+
+
+config/serviceAccountKey.json
