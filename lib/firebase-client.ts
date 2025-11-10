@@ -1,6 +1,7 @@
 'use client';
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
+import type { Auth } from 'firebase/auth';
 import {
   getAuth,
   setPersistence,
@@ -25,7 +26,13 @@ const firebaseConfig = {
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
+// Avoid initializing Firebase Auth during SSR/SSG build where envs may be absent.
+// This prevents build failures like "FirebaseError: auth/invalid-api-key" when
+// NEXT_PUBLIC_FIREBASE_API_KEY isn't configured in the build environment.
+export const auth: Auth = (typeof window !== 'undefined'
+  ? getAuth(app)
+  // Cast only for SSR import time; code paths that use auth run in the browser.
+  : (null as unknown as Auth));
 export const db = getFirestore(app);
 // Ensure we point to the exact bucket used in console.
 export const storage = getStorage(
