@@ -33,13 +33,15 @@ export async function sendProjectInvite(input: SendInviteInput): Promise<{ id: s
   const projectId = (input.projectId || '').trim();
   const projectTitle = (input.projectTitle || '').trim();
   const invitedEmail = normalizeEmail(input.invitedEmail);
-  const invitedUserName = (input.invitedUserName || '').trim() || (invitedEmail.includes('@') ? invitedEmail.split('@')[0] : invitedEmail);
+  if (!invitedEmail) throw new Error('Missing invitedEmail');
+  const invitedUserName =
+    (input.invitedUserName || '').trim() ||
+    (invitedEmail.includes('@') ? invitedEmail.split('@')[0] : invitedEmail);
   const role = (input.role || '').trim() || 'Member';
   const accessLevel = input.accessLevel === 'edit' ? 'edit' : 'view';
 
   if (!projectId) throw new Error('Missing projectId');
   if (!projectTitle) throw new Error('Missing projectTitle');
-  if (!invitedEmail) throw new Error('Missing invitedEmail');
 
   // Permission: inviter must be a member/owner of the project
   const allowed = await checkProjectPermission(projectId);
