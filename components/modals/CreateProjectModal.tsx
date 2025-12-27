@@ -110,16 +110,6 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     [initialData?.members]
   );
 
-  const knownMembers = useMemo(() => {
-    const set = new Set<string>();
-    existingMembers.forEach((m) => set.add(m));
-    allUsers.forEach((user) => {
-      const key = normalizeMember(user.email);
-      if (key) set.add(key);
-    });
-    return set;
-  }, [existingMembers, allUsers]);
-
   if (!isOpen) return null;
 
   return (
@@ -163,8 +153,8 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
         >
           {({ values, errors, touched, isSubmitting, setFieldValue }) => {
             const hasNewInvites = (values.members || []).some((m) => !existingMembers.has(normalizeMember(m)));
-            const hasNewMembers = (values.members || []).some((m) => !knownMembers.has(normalizeMember(m)));
-            const createLabel = hasNewMembers ? 'Create & Invite' : 'Create Project';
+            const hasSelectedMembers = (values.members || []).length > 0;
+            const createLabel = hasSelectedMembers ? 'Create & Invite' : 'Create Project';
             const updateLabel = hasNewInvites ? 'Update & Invite' : 'Update';
             return (
               <Form className="px-4 pb-4 space-y-2">

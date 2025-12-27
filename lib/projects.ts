@@ -1,5 +1,6 @@
 import { auth, db } from '@/lib/firebase-client';
 import { ensureCanModifyProject } from '@/lib/permissions';
+import { sendProjectInvite } from '@/lib/invitations';
 import {
   Timestamp,
   collection,
@@ -46,6 +47,11 @@ export type ProjectDoc = {
   status: string; // e.g. "In progress" | "Completed" | "Cancelled"
   progress?: number; // could be 0..1 or 0..100
   collaboratorUids?: string[]; // optional index helper for queries
+  companyName?: string;
+  description?: string;
+  conclusion?: string;
+  issueSummary?: Record<string, number>;
+  extraFields?: Record<string, unknown>;
 };
 
 // UI card shape used across dashboard
@@ -250,7 +256,7 @@ export async function createProject(input: {
   clientName: string;
   location: string;
   deadline?: string;
-  members?: string[]; // emails for now
+  members?: string[]; // emails for invites; users are only added to the project once they accept
   viewAccess?: boolean;
   editAccess?: boolean;
 }) {
@@ -278,16 +284,23 @@ export async function createProject(input: {
   } catch {}
 
   const emails = Array.isArray(input.members) ? input.members : [];
-  const normalizedEmails = Array.from(new Set(emails.map((e)=> (e||'').toString().trim().toLowerCase()).filter(Boolean)));
-  const canEditFlag = !!input.editAccess;
-  const collaboratorEntries: Collaborator[] = normalizedEmails.map((email)=>({ uid:'', email, name: email.includes('@')? email.split('@')[0]: email, photoUrl:'', role: canEditFlag ? 'edit':'view', canEdit: canEditFlag }));
+  const normalizedEmails = Array.from(
+    new Set(
+      emails
+        .map((e) => (e || '').toString().trim().toLowerCase())
+        .filter(Boolean)
+    )
+  );
 
   const payload: Partial<ProjectDoc> & { collaboratorUids: string[] } = {
     title: input.title,
     clientName: input.clientName,
     location: input.location,
     ownerId: user.uid,
-    collaborators: [owner, ...collaboratorEntries],
+    // At creation time, only persist the owner as a collaborator.
+    // Any additional emails are treated as invite targets and are not added
+    // to the project until the invite is accepted.
+    collaborators: [owner],
     files: [],
     createdAt: serverTimestamp() as any,
     updatedAt: serverTimestamp() as any,
@@ -304,21 +317,29 @@ export async function createProject(input: {
     const { ensureChatMetadata } = await import('@/lib/chat');
     await ensureChatMetadata(res.id, { members: [user.uid], memberEmails: [user.email || ''], creatorId: user.uid });
   } catch {}
-    // Best-effort invites for provided emails
-  try {
-    const { sendProjectInvite } = await import('@/lib/invitations');
-    await Promise.allSettled(
-      normalizedEmails.map((email) =>
-        sendProjectInvite({
-          projectId: res.id,
-          projectTitle: input.title,
-          invitedEmail: email,
-          role: canEditFlag ? 'Editor' : 'Viewer',
-          accessLevel: canEditFlag ? 'edit' : 'view',
-        })
-      )
-    );
-  } catch {}  return res.id;
+
+  // Best-effort invites for provided emails when using "Create & Invite":
+  // Do NOT add users to the project yet; only create invite + notification.
+  if (normalizedEmails.length > 0) {
+    try {
+      const accessLevel = input.editAccess ? 'edit' : 'view';
+      await Promise.allSettled(
+        normalizedEmails.map((email) =>
+          sendProjectInvite({
+            projectId: res.id,
+            projectTitle: input.title,
+            invitedEmail: email,
+            role: 'Client',
+            accessLevel,
+          })
+        )
+      );
+    } catch {
+      // Swallow invite errors to avoid blocking project creation
+    }
+  }
+
+  return res.id;
 }
 
 // Update project fields from edit form

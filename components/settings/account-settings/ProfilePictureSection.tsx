@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
 import { Upload, Trash2 } from 'lucide-react';
+import { getUserAvatar } from '@/lib/user-profile';
 
 interface ProfilePictureSectionProps {
   avatarSrc?: string;
@@ -66,13 +67,18 @@ const ProfilePictureSection: React.FC<ProfilePictureSectionProps> = ({
           {showSkeleton ? (
             <div className="w-16 h-16 rounded-full bg-avatar-bg animate-pulse flex-shrink-0" />
           ) : (
-            <Avatar
-              src={hasCustomImage ? normalizedSrc : undefined}
-              alt={userName}
-              name={userName}
-              size="xl"
-              className="w-16 h-16 flex-shrink-0"
-            />
+            (() => {
+              const avatar = getUserAvatar({ profileImage: hasCustomImage ? normalizedSrc : '', name: userName });
+              return (
+                <Avatar
+                  src={avatar.src}
+                  alt={userName}
+                  name={userName}
+                  size="xl"
+                  className="w-16 h-16 flex-shrink-0"
+                />
+              );
+            })()
           )}
           <div className="flex flex-col sm:flex-row gap-3">
             <Button 

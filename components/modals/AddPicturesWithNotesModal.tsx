@@ -15,6 +15,7 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({
   onAdd,
 }) => {
   const [pictures, setPictures] = useState<File[]>([]);
+  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const [note, setNote] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const plusBtnRef = useRef<HTMLButtonElement>(null);
@@ -63,6 +64,15 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({
 
   const removePicture = (index: number) => {
     setPictures(prev => prev.filter((_, i) => i !== index));
+    setSelectedIndices(prev => {
+      if (!prev.size) return prev;
+      const next = new Set<number>();
+      prev.forEach(i => {
+        if (i === index) return;
+        next.add(i > index ? i - 1 : i);
+      });
+      return next;
+    });
   };
 
   const handleAddPictures = () => {
@@ -130,6 +140,45 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({
     }
     onAdd(pictures, note.trim());
     setPictures([]);
+    setSelectedIndices(new Set());
+    setNote('');
+    setError(null);
+    stopStream();
+    revokeCaptured();
+    onClose();
+  };
+
+  const toggleSelectPicture = (index: number) => {
+    setSelectedIndices(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = () => {
+    if (!selectedIndices.size) return;
+    setPictures(prev => prev.filter((_, idx) => !selectedIndices.has(idx)));
+    setSelectedIndices(new Set());
+  };
+
+  const handleDone = () => {
+    if (capturedUrl) {
+      setError('Please tap "Use Photo" to add the captured image, or close camera.');
+      return;
+    }
+    if (!selectedIndices.size) {
+      setError('Please select at least one image.');
+      return;
+    }
+    const selected = pictures.filter((_, idx) => selectedIndices.has(idx));
+    onAdd(selected, note.trim());
+    setPictures([]);
+    setSelectedIndices(new Set());
     setNote('');
     setError(null);
     stopStream();
@@ -142,6 +191,8 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({
       stopStream();
       revokeCaptured();
       setChoiceOpen(false);
+      setSelectedIndices(new Set());
+      setError(null);
       return;
     }
   }, [isOpen]);
@@ -152,13 +203,51 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="relative bg-white rounded-lg p-6 w-full max-w-sm mx-4">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-black">Add Pictures with notes</h2>
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-gray-100 rounded"
-          >
-            <XIcon className="w-5 h-5 text-gray-500" />
-          </button>
+          {selectedIndices.size === 0 ? (
+            <>
+              <h2 className="text-lg font-semibold text-black">Add Pictures with notes</h2>
+              <button
+                onClick={onClose}
+                className="p-1 hover:bg-gray-100 rounded"
+              >
+                <XIcon className="w-5 h-5 text-gray-500" />
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedIndices(new Set())}
+                  className="text-xs text-gray-600 hover:text-black"
+                >
+                  Cancel
+                </button>
+                <span className="text-sm font-semibold text-black">
+                  {selectedIndices.size} selected
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDeleteSelected}
+                  className="flex items-center gap-1 text-xs text-red-600 hover:text-red-700"
+                >
+                  <TrashIcon className="w-4 h-4" />
+                  Delete
+                </button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  className="text-xs"
+                  onClick={handleDone}
+                >
+                  Done
+                </Button>
+              </div>
+            </>
+          )}
         </div>
         
         <p className="text-sm text-gray-600 mb-4">
@@ -173,15 +262,25 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({
             </label>
             <div className="flex flex-wrap gap-2 mb-2 relative">
               {pictures.map((picture, index) => (
-                <div key={index} className="relative">
+                <div
+                  key={index}
+                  className={`relative cursor-pointer ${selectedIndices.has(index) ? 'ring-2 ring-blue-500' : ''}`}
+                  onClick={() => toggleSelectPicture(index)}
+                >
                   <img
                     src={URL.createObjectURL(picture)}
                     alt={`Preview ${index + 1}`}
-                    className="w-16 h-16 object-cover rounded border"
+                    className={`w-16 h-16 object-cover rounded border ${selectedIndices.has(index) ? 'border-blue-500' : ''}`}
                   />
+                  {selectedIndices.has(index) && (
+                    <div className="absolute inset-0 rounded bg-black/20 pointer-events-none" />
+                  )}
                   <button
                     type="button"
-                    onClick={() => removePicture(index)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removePicture(index);
+                    }}
                     className="absolute -top-1 -right-1 w-5 h-5 bg-gray-600 text-white rounded-full flex items-center justify-center text-xs hover:bg-gray-700"
                   >
                     <XIcon className="w-3 h-3" />

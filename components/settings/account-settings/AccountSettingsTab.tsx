@@ -5,7 +5,7 @@ import PersonalInfoSection from './PersonalInfoSection';
 import NotificationsSection from './NotificationsSection';
 import PasswordSection from './PasswordSection';
 import SettingsActionButtons from './SettingsActionButtons';
-import { personalInfoSchema, passwordChangeSchema, PersonalInfoFormValues, PasswordChangeFormValues } from '@/lib/validation';
+import { personalInfoSchema } from '@/lib/validation';
 import { useUser } from '@/context/UserContext';
 
 interface PersonalInfoData {

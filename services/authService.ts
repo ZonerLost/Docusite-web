@@ -158,3 +158,4 @@ export async function signOut() {
 export async function forgotPassword(email: string) {
   await sendPasswordResetEmail(auth, email.trim());
 }
+

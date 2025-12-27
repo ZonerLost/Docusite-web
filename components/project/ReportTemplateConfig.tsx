@@ -29,7 +29,7 @@ export interface ReportTemplateConfig {
 export const REPORT_TEMPLATES: Record<ReportType, ReportTemplateConfig> = {
   'site-inspection': {
     type: 'site-inspection',
-    title: 'Site Inspection Report',
+    title: 'Inspection Report',
     subtitle: 'Construction Progress Assessment',
     sections: {
       executiveSummary: true,

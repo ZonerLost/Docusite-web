@@ -23,6 +23,7 @@ interface DocumentViewerHeaderProps {
   searchQuery: string;
   onSearchChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onExportPdf: () => void;
+   onOpenReportMeta?: () => void;
   activeTab: 'view' | 'annotate';
   onTabChange: (tab: 'view' | 'annotate') => void;
   onAddNote: () => void;
@@ -47,6 +48,7 @@ const DocumentViewerHeader: React.FC<DocumentViewerHeaderProps> = ({
   searchQuery,
   onSearchChange,
   onExportPdf,
+  onOpenReportMeta,
   activeTab,
   onTabChange,
   onAddNote,
@@ -302,10 +304,22 @@ const DocumentViewerHeader: React.FC<DocumentViewerHeaderProps> = ({
               </div>
             )}
           </div>
-          <Button onClick={onExportPdf} variant="primary" className="w-full sm:w-auto">
-            <span className="hidden sm:inline">Save & Export</span>
-            <span className="sm:hidden">Export</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            {onOpenReportMeta && (
+              <Button
+                type="button"
+                variant="secondary"
+                className="hidden sm:inline-flex"
+                onClick={onOpenReportMeta}
+              >
+                Report Info
+              </Button>
+            )}
+            <Button onClick={onExportPdf} variant="primary" className="w-full sm:w-auto">
+              <span className="hidden sm:inline">Save & Export</span>
+              <span className="sm:hidden">Export</span>
+            </Button>
+          </div>
         </div>
       </div>
       

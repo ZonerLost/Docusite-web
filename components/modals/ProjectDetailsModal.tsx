@@ -158,7 +158,8 @@ const ProjectDetailsModal: React.FC<ProjectDetailsModalProps> = ({ isOpen, onClo
         clientName: projectData.clientName,
         location: projectData.location,
         deadline: projectData.deadline,
-        members: projectData.members,
+        // Do not auto-add new emails as collaborators here;
+        // they should only become members after accepting the invite.
         viewAccess: projectData.viewAccess,
         editAccess: projectData.editAccess,
       });

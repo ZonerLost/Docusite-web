@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import admin, { getAdminDb } from '@/lib/server/firebaseAdmin';
 import { collectProjectMemberEmails } from '@/lib/server/fcm';
+import { normalizeEmail } from '@/lib/notifications/keys';
 
 export const runtime = 'nodejs';
 const ENABLE_NOTIFICATIONS = process.env.ENABLE_NOTIFICATIONS === '1';
@@ -55,14 +56,17 @@ export async function POST(req: Request) {
     }
 
     ctx.step = 'collect_members';
-    let emails = await collectProjectMemberEmails(projectId);
+    let emails = (await collectProjectMemberEmails(projectId))
+      .map((e) => normalizeEmail(e))
+      .filter((e): e is string => !!e);
+    emails = Array.from(new Set(emails));
     // Exclude the uploader from notifications when possible
     if (uploaderId) {
       try {
         const userSnap = await getAdminDb().collection('users').doc(uploaderId).get();
-        const uploaderEmail = ((userSnap.get('email') as string | undefined) || '').trim().toLowerCase();
+        const uploaderEmail = normalizeEmail(userSnap.get('email') as string | undefined);
         if (uploaderEmail) {
-          emails = emails.filter((e) => (e || '').trim().toLowerCase() !== uploaderEmail);
+          emails = emails.filter((e) => normalizeEmail(e) !== uploaderEmail);
         }
       } catch {}
     }
@@ -89,7 +93,7 @@ export async function POST(req: Request) {
       try {
         const batch = getAdminDb().batch();
         for (const email of chunk) {
-          const key = (email || '').trim().toLowerCase();
+          const key = normalizeEmail(email);
           if (!key) continue;
           const root = getAdminDb().collection('notifications').doc(key);
           const items = root.collection('items');

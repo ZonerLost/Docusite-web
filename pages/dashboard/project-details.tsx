@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import NotesModal from '@/components/modals/NotesModal';
 import AddNotesModal from '@/components/modals/AddNotesModal';
 import AddPicturesWithNotesModal from '@/components/modals/AddPicturesWithNotesModal';
+import ReportMetaModal from '@/components/modals/ReportMetaModal';
 import DocumentViewerHeader from '@/components/project/DocumentViewerHeader';
 import DocumentViewer from '@/components/project/DocumentViewer';
 import { useProjectFiles } from '@/hooks/useProjectFiles';
@@ -30,6 +31,7 @@ const ProjectDetailsDashboardPage: React.FC = () => {
   const [isNotesOpen, setIsNotesOpen] = useState(false);
   const [isAddNotesOpen, setIsAddNotesOpen] = useState(false);
   const [isAddPicturesOpen, setIsAddPicturesOpen] = useState(false);
+  const [isReportMetaOpen, setIsReportMetaOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'view' | 'annotate'>('view');
   
@@ -57,6 +59,7 @@ const ProjectDetailsDashboardPage: React.FC = () => {
     redo: () => void;
     addImageAnnotation: (imageUrl: string, note: string) => void;
     addMultipleImages: (imageUrls: string[], note: string) => void;
+    addImagesWithUpload?: (files: File[], note: string) => void;
     domRef: HTMLDivElement | null;
     openCategory?: (name: string) => void;
     addNoteAnnotation?: (text: string, x?: number, y?: number) => void;
@@ -156,21 +159,22 @@ const ProjectDetailsDashboardPage: React.FC = () => {
     if (note.trim()) {
       handleAddNote(note);
     }
-    
-    // Convert single file to data URL
-    if (pictures.length > 0) {
+
+    if (viewerRef.current?.addImagesWithUpload) {
+      viewerRef.current.addImagesWithUpload(pictures, note);
+    } else if (pictures.length > 0) {
+      // Fallback: previous behavior using a single data-URL image
       const picture = pictures[0];
       const reader = new FileReader();
       reader.onload = (e) => {
         const imageUrl = e.target?.result as string;
-        // Add single image annotation
-        if (exportRef.current && 'addImageAnnotation' in exportRef.current) {
-          (exportRef.current as any).addImageAnnotation(imageUrl, note);
+        if (viewerRef.current && 'addImageAnnotation' in viewerRef.current) {
+          (viewerRef.current as any).addImageAnnotation(imageUrl, note);
         }
       };
       reader.readAsDataURL(picture);
     }
-    
+
     setIsAddPicturesOpen(false);
   };
 
@@ -322,6 +326,7 @@ const ProjectDetailsDashboardPage: React.FC = () => {
         searchQuery={searchQuery}
         onSearchChange={handleSearchChange}
         onExportPdf={handleExportPdf}
+        onOpenReportMeta={() => setIsReportMetaOpen(true)}
         activeTab={activeTab}
         onTabChange={handleTabChange}
         onAddNote={() => setIsAddNotesOpen(true)}
@@ -373,6 +378,12 @@ const ProjectDetailsDashboardPage: React.FC = () => {
         isOpen={isAddPicturesOpen}
         onClose={() => setIsAddPicturesOpen(false)}
         onAdd={handleAddPicturesWithNotes}
+      />
+
+      <ReportMetaModal
+        projectId={project.id}
+        isOpen={isReportMetaOpen}
+        onClose={() => setIsReportMetaOpen(false)}
       />
     </div>
   );

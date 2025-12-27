@@ -4,6 +4,7 @@ import Avatar from '@/components/ui/Avatar';
 import { removeProjectMember } from '@/lib/projects';
 import { toast } from 'react-hot-toast';
 import { checkProjectPermission } from '@/lib/permissions';
+import { getUserAvatar } from '@/lib/user-profile';
 
 interface Member {
   id: string;
@@ -31,7 +32,11 @@ const MembersList: React.FC<MembersListProps> = ({ projectId, memberCount, onAdd
           email: c.email,
           name: c.name,
           role: c.role,
-          avatar: c.photoUrl || '',
+          avatar: getUserAvatar({
+            photoUrl: c.photoUrl ?? null,
+            name: c.name,
+            email: c.email || null,
+          }).src || '',
         }))
       );
     } else {

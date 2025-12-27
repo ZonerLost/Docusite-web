@@ -1,5 +1,6 @@
 import { auth, db } from '@/lib/firebase-client';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { normalizeEmail } from '@/lib/notifications';
 
 /**
  * Ensures a lowercase email is present on /users/{uid} and
@@ -11,7 +12,7 @@ export async function ensureUserDoc(): Promise<void> {
     const u = auth.currentUser;
     if (!u) return;
 
-    const email = (u.email || '').trim().toLowerCase();
+    const email = normalizeEmail(u.email) || '';
 
     // /users/{uid} -> { email }
     await setDoc(

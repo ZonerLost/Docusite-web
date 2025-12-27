@@ -228,6 +228,8 @@ export default function Dashboard() {
         clientName: projectData.clientName,
         location: projectData.location,
         deadline: projectData.deadline,
+        // Treat provided emails as invite targets only; they are
+        // not added to the project until the invite is accepted.
         members: projectData.members,
         viewAccess: projectData.viewAccess,
         editAccess: projectData.editAccess,

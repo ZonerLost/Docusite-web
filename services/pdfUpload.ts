@@ -4,6 +4,7 @@ import { db, storage, auth } from '@/lib/firebase-client';
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { doc, runTransaction, getDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { checkProjectEditPermission } from '@/lib/permissions';
+import { normalizeEmail } from '@/lib/notifications/keys';
 const DEBUG_NOTIF = process.env.NEXT_PUBLIC_DEBUG_NOTIFICATIONS === '1';
 
 export type UploadPdfInput = {
@@ -77,19 +78,13 @@ export async function uploadProjectPdf(input: UploadPdfInput): Promise<UploadPdf
 
   // 4.4️⃣ Create Firestore notifications for all project members (client-side)
   try {
-    const normalizeEmail = (v?: string | null) => {
-      if (!v || typeof v !== 'string') return '';
-      const t = v.trim();
-      return t ? t.toLowerCase() : '';
-    };
-
     // Fetch project details to get title and collaborators' emails
     const projSnap = await getDoc(doc(db, 'projects', input.projectId));
     if (projSnap.exists()) {
       const pdata = projSnap.data() as any;
       const projectName: string = String(pdata?.title || 'Project');
       const collaborators: any[] = Array.isArray(pdata?.collaborators) ? pdata.collaborators : [];
-      const uploaderEmail = normalizeEmail(auth.currentUser?.email || '');
+      const uploaderEmail = normalizeEmail(auth.currentUser?.email) || '';
       const emails = Array.from(
         new Set(
           collaborators

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Avatar from '@/components/ui/Avatar';
 import Button from '@/components/ui/Button';
 import { LogoutIcon } from '@/components/ui/Icons';
+import { getUserAvatar } from '@/lib/user-profile';
 
 interface SettingsHeaderProps {
   userName: string;
@@ -49,13 +50,18 @@ const SettingsHeader: React.FC<SettingsHeaderProps> = ({
           {showSkeleton ? (
             <div className="w-12 h-12 rounded-full bg-avatar-bg animate-pulse flex-shrink-0" />
           ) : (
-            <Avatar 
-              src={hasCustomImage ? normalizedSrc : undefined}
-              alt={userName}
-              name={userName}
-              size="lg"
-              className="w-12 h-12 flex-shrink-0"
-            />
+            (() => {
+              const avatar = getUserAvatar({ profileImage: hasCustomImage ? normalizedSrc : '', name: userName });
+              return (
+                <Avatar 
+                  src={avatar.src}
+                  alt={userName}
+                  name={userName}
+                  size="lg"
+                  className="w-12 h-12 flex-shrink-0"
+                />
+              );
+            })()
           )}
           <div>
             <h1 className="text-lg sm:text-xl font-bold text-black">{userName}</h1>

@@ -4,6 +4,7 @@ import { DocIcon, DashboardIcon, MessagesIcon, SettingsIcon, LogoutIcon, Collaps
 import { XIcon } from 'lucide-react';
 import useTranslation from '@/hooks/useTranslation';
 import Image from 'next/image';
+import ConfirmDeleteModal from '../modals/ConfirmDeleteModal';
 
 interface SidebarProps {
   isCollapsed?: boolean;
@@ -28,6 +29,7 @@ const Sidebar: React.FC<SidebarProps> = React.memo(({ isCollapsed = false, onTog
   const router = useRouter();
   const { t } = useTranslation();
   const [activeItem, setActiveItem] = useState('dashboard');
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
   // Update active item based on current route
   useEffect(() => {
@@ -92,79 +94,98 @@ const Sidebar: React.FC<SidebarProps> = React.memo(({ isCollapsed = false, onTog
     router.push('/login');
   };
 
+  const openLogoutModal = () => setIsLogoutModalOpen(true);
+  const closeLogoutModal = () => setIsLogoutModalOpen(false);
+  const confirmLogout = () => {
+    closeLogoutModal();
+    handleLogout();
+  };
+
   return (
-    <div className={`bg-white border-r border-border-gray h-full flex flex-col transition-all duration-300 ${
-      isCollapsed ? 'w-16 pl-6' : 'w-64 pl-6'
-    }`}>
-      {/* Header */}
-      <div className="flex items-center justify-between py-4 border-b border-border-gray">
-      <div className="w-28 h-8">
-      <Image src="/docusite.svg" alt="Docusite" width={32} height={32} className="w-full h-full" />
-      </div>
-        <div className="flex items-center space-x-2">
-          {/* Mobile Close Button */}
-          <button
-            onClick={onMobileClose}
-            className="lg:hidden p-1 hover:bg-light-gray rounded-md transition-colors"
-          >
-            <XIcon className="w-5 h-5 text-gray-600" />
-          </button>
-          {/* Desktop Collapse Button */}
-          {!isCollapsed && (
+    <>
+      <div className={`bg-white border-r border-border-gray h-full flex flex-col transition-all duration-300 ${
+        isCollapsed ? 'w-16 pl-6' : 'w-64 pl-6'
+      }`}>
+        {/* Header */}
+        <div className="flex items-center justify-between py-4 border-b border-border-gray">
+          <div className="w-28 h-8">
+            <Image src="/docusite.svg" alt="Docusite" width={32} height={32} className="w-full h-full" />
+          </div>
+          <div className="flex items-center space-x-2">
+            {/* Mobile Close Button */}
             <button
-              onClick={onToggle}
-              className="hidden lg:block p-1 hover:bg-light-gray rounded-md transition-colors"
+              onClick={onMobileClose}
+              className="lg:hidden p-1 hover:bg-light-gray rounded-md transition-colors"
             >
-              <CollapseIcon />
+              <XIcon className="w-5 h-5 text-gray-600" />
             </button>
-          )}
+            {/* Desktop Collapse Button */}
+            {!isCollapsed && (
+              <button
+                onClick={onToggle}
+                className="hidden lg:block p-1 hover:bg-light-gray rounded-md transition-colors"
+              >
+                <CollapseIcon />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <div className="flex-1 py-4">
+          {navigationSections.map((section, sectionIndex) => (
+            <div key={sectionIndex} className="mb-6">
+              {!isCollapsed && (
+                <h3 className=" text-md font-light text-placeholder-gray mb-2">
+                  {section.title}
+                </h3>
+              )}
+              <nav className="space-y-1">
+                {section.items.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={item.onClick}
+                    className={`w-full flex items-center  py-2 text-md font-normal transition-colors ${
+                      activeItem === item.id
+                        ? 'bg-gradient-sidebar-active text-action border-r-4 border-action'
+                        : 'text-text-gray hover:bg-light-gray'
+                    }`}
+                  >
+                    {item.icon}
+                    {!isCollapsed && (
+                      <span className="ml-3">{item.label}</span>
+                    )}
+                  </button>
+                ))}
+              </nav>
+            </div>
+          ))}
+        </div>
+
+        {/* Logout - Fixed at bottom */}
+        <div className="mt-auto border-t border-border-gray py-4">
+          <button
+            onClick={openLogoutModal}
+            className="w-full flex items-center  py-3 text-md font-semibold cursor-pointer text-black transition-colors"
+          >
+            <LogoutIcon isActive={false} />
+            {!isCollapsed && (
+              <span className="ml-3">{t('common.logout')}</span>
+            )}
+          </button>
         </div>
       </div>
 
-      {/* Navigation */}
-      <div className="flex-1 py-4">
-        {navigationSections.map((section, sectionIndex) => (
-          <div key={sectionIndex} className="mb-6">
-            {!isCollapsed && (
-              <h3 className=" text-md font-light text-placeholder-gray mb-2">
-                {section.title}
-              </h3>
-            )}
-            <nav className="space-y-1">
-              {section.items.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={item.onClick}
-                  className={`w-full flex items-center  py-2 text-md font-normal transition-colors ${
-                    activeItem === item.id
-                      ? 'bg-gradient-sidebar-active text-action border-r-4 border-action'
-                      : 'text-text-gray hover:bg-light-gray'
-                  }`}
-                >
-                  {item.icon}
-                  {!isCollapsed && (
-                    <span className="ml-3">{item.label}</span>
-                  )}
-                </button>
-              ))}
-            </nav>
-          </div>
-        ))}
-      </div>
-
-      {/* Logout - Fixed at bottom */}
-      <div className="mt-auto border-t border-border-gray py-4">
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center  py-3 text-md font-semibold cursor-pointer text-black transition-colors"
-        >
-          <LogoutIcon isActive={false} />
-          {!isCollapsed && (
-            <span className="ml-3">{t('common.logout')}</span>
-          )}
-        </button>
-      </div>
-    </div>
+      <ConfirmDeleteModal
+        isOpen={isLogoutModalOpen}
+        title={`${t('common.logout')}?`}
+        message="Are you sure you want to logout?"
+        confirmText={t('common.logout')}
+        cancelText={t('common.cancel')}
+        onConfirm={confirmLogout}
+        onCancel={closeLogoutModal}
+      />
+    </>
   );
 });
 

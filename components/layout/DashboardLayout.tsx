@@ -1,10 +1,8 @@
 import React from 'react';
 import { useRouter } from 'next/router';
-
 interface DashboardLayoutProps {
   children: React.ReactNode;
 }
-
 const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const router = useRouter();
 
@@ -31,5 +29,4 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
     </div>
   );
 };
-
 export default DashboardLayout;

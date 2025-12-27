@@ -6,6 +6,7 @@ import { auth } from '@/lib/firebase-client';
 import { subscribeProjectsForUser, ProjectCardUI } from '@/lib/projects';
 import { ChatMessageDoc, subscribeProjectMessages, sendTextMessage, sendFileMessage, markAllAsRead, deleteProjectMessage } from '@/lib/chat';
 import { toggleMessageReaction } from '@/lib/chat';
+import { getUserAvatar } from '@/lib/user-profile';
 import { useRouter } from 'next/router';
 import { toast } from 'react-hot-toast';
 
@@ -131,24 +132,29 @@ export default function Messages() {
         return `${displayHours}:${minutes} ${ampm}`;
       } catch { return ''; }
     })();
-    const outgoing = d.data.userId === myUid;
-    const readBy = Array.isArray(d.data.readBy) ? d.data.readBy : [];
-    return {
-      id: d.id,
-      type: outgoing ? 'outgoing' : 'incoming',
-      content: d.data.message || (d.data.fileName || ''),
-      timestamp: ts,
-      avatar: (d.data.photoUrl || '') || undefined,
-      isRead: outgoing ? readBy.length > 1 : true,
-      messageType: d.data.messageType,
-      fileUrl: d.data.fileUrl,
-      fileName: d.data.fileName,
-      senderName: outgoing ? undefined : d.data.sentBy,
-      replyTo: (d.data as any)?.replyTo || null,
-      replyText: (d.data as any)?.replyText || null,
-      replySender: (d.data as any)?.replySender || null,
-      reactions: (d.data as any)?.reactions || undefined,
-    };
+      const outgoing = d.data.userId === myUid;
+      const readBy = Array.isArray(d.data.readBy) ? d.data.readBy : [];
+      const avatar = getUserAvatar({
+        photoUrl: d.data.photoUrl ?? null,
+        name: outgoing ? undefined : (d.data.sentBy || null),
+        email: d.data.sentBy || null,
+      });
+      return {
+        id: d.id,
+        type: outgoing ? 'outgoing' : 'incoming',
+        content: d.data.message || (d.data.fileName || ''),
+        timestamp: ts,
+        avatar: avatar.src || undefined,
+        isRead: outgoing ? readBy.length > 1 : true,
+        messageType: d.data.messageType,
+        fileUrl: d.data.fileUrl,
+        fileName: d.data.fileName,
+        senderName: outgoing ? undefined : d.data.sentBy,
+        replyTo: (d.data as any)?.replyTo || null,
+        replyText: (d.data as any)?.replyText || null,
+        replySender: (d.data as any)?.replySender || null,
+        reactions: (d.data as any)?.reactions || undefined,
+      };
   };
 
   // Subscribe to messages for the selected project (live updates), but only if the user is a member

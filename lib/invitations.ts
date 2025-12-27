@@ -9,6 +9,7 @@ import {
   updateDoc,
   writeBatch,
 } from 'firebase/firestore';
+import { normalizeEmail } from '@/lib/notifications';
 
 // In-memory idempotency guards for duplicate front-end calls
 // - INFLIGHT prevents concurrent duplicates during the same tick/action
@@ -24,10 +25,6 @@ type SendInviteInput = {
   role: string;
   accessLevel?: 'view' | 'edit';
 };
-
-function normalizeEmail(email: string): string {
-  return (email || '').trim().toLowerCase();
-}
 
 export async function sendProjectInvite(input: SendInviteInput): Promise<{ id: string }>{
   const user = auth.currentUser;
@@ -162,6 +159,7 @@ export async function acceptProjectInvite(invitedEmail: string, inviteId: string
   const user = auth.currentUser;
   if (!user) throw new Error('Not authenticated');
   const emailKey = normalizeEmail(invitedEmail);
+  if (!emailKey) throw new Error('Invalid invite email');
   const metaRef = doc(db, 'pending_requests', emailKey);
   const inviteRef = doc(collection(metaRef, 'requests'), inviteId);
 
@@ -172,20 +170,20 @@ export async function acceptProjectInvite(invitedEmail: string, inviteId: string
   const projectId: string = (data?.projectId || '').trim();
   if (!projectId) throw new Error('Invalid invite: missing projectId');
 
-  // Add user to project members subcollection with original collaborator fields
-  const memberId = user.uid || emailKey || inviteId;
-  const memberRef = doc(db, 'projects', projectId, 'members', memberId);
+  // Add user to project members subcollection using members collection structure
+  const memberRef = doc(db, 'projects', projectId, 'members', user.uid);
 
   const memberDoc = {
-    uid: user.uid || '',
-    email: user.email || emailKey,
-    name: user.displayName || data?.invitedUserName || (emailKey.includes('@') ? emailKey.split('@')[0] : emailKey),
-    photoUrl: user.photoURL || '',
-    role: data?.role || 'Member',
-    canEdit: (data?.accessLevel || 'view') === 'edit',
-    createdAt: serverTimestamp() as any,
-    updatedAt: serverTimestamp() as any,
-  };
+    userId: user.uid,
+    userName:
+      user.displayName ||
+      data?.invitedUserName ||
+      (emailKey.includes('@') ? emailKey.split('@')[0] : emailKey),
+    userEmail: user.email || emailKey,
+    role: (data?.role || 'Member').toString(),
+    accessLevel: (data?.accessLevel || 'view').toString(),
+    joinedAt: serverTimestamp() as any,
+  } as const;
 
   const batch = writeBatch(db);
   batch.set(memberRef, memberDoc);
@@ -196,6 +194,7 @@ export async function acceptProjectInvite(invitedEmail: string, inviteId: string
 
 export async function declineProjectInvite(invitedEmail: string, inviteId: string): Promise<void> {
   const emailKey = normalizeEmail(invitedEmail);
+  if (!emailKey) throw new Error('Invalid invite email');
   const metaRef = doc(db, 'pending_requests', emailKey);
   const inviteRef = doc(collection(metaRef, 'requests'), inviteId);
 

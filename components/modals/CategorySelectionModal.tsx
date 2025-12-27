@@ -8,14 +8,6 @@ interface CategorySelectionModalProps {
   onCategorySelect: (category: string) => void;
 }
 
-// const categories = [
-//   ' STRUCTURAL',
-//   'MEP',
-//   'Architectural',
-//   'Interior/ Finishes',
-//   'Others'
-// ];
-
 export const categories = [
   '🏛 Structural',
   '🧱 Architectural',
