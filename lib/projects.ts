@@ -39,6 +39,10 @@ export type ProjectDoc = {
   clientName: string;
   location: string;
   ownerId: string;
+  ownerUid?: string;
+  ownerEmail?: string;
+  ownerName?: string;
+  createdByUid?: string;
   collaborators: Collaborator[];
   files?: ProjectFile[];
   createdAt: Timestamp;
@@ -262,6 +266,7 @@ export async function createProject(input: {
 }) {
   const user = auth.currentUser;
   if (!user) throw new Error('Not authenticated');
+  const ownerEmail = (user.email || '').trim().toLowerCase();
 
   const owner: Collaborator = {
     uid: user.uid,
@@ -297,6 +302,10 @@ export async function createProject(input: {
     clientName: input.clientName,
     location: input.location,
     ownerId: user.uid,
+    ownerUid: user.uid,
+    ownerEmail,
+    ownerName: user.displayName || '',
+    createdByUid: user.uid,
     // At creation time, only persist the owner as a collaborator.
     // Any additional emails are treated as invite targets and are not added
     // to the project until the invite is accepted.

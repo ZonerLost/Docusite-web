@@ -53,7 +53,14 @@ export function useTopBarNotifications() {
       if (u?.email) {
         try {
           await ensureUserDoc();
-        } catch {}
+        } catch (e) {
+          console.warn(
+            "[notifications] ensureUserDoc failed; skipping subscribe",
+            e
+          );
+          setNotifications([]);
+          return;
+        }
         stop = subscribeUserNotifications(u.email, setNotifications);
       } else {
         setNotifications([]);

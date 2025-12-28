@@ -8,9 +8,8 @@ import {
   writeBatch,
 } from "firebase/firestore";
 
-import { normalizeEmail } from "./keys";
+import { getAuthedEmailKey } from "./authed";
 import type { InviteSummary } from "./types";
-import { getDoc as getDocFs } from "firebase/firestore";
 
 function notifItemRef(emailKey: string, notificationId: string) {
   return doc(collection(doc(db, "notifications", emailKey), "items"), notificationId);
@@ -21,10 +20,22 @@ export async function getInviteSummary(
   inviteId: string,
   opts: { pendingOnly?: boolean } = { pendingOnly: true }
 ): Promise<InviteSummary | null> {
+  let key: string;
   try {
-    const key = normalizeEmail(invitedEmail);
-    if (!key || !inviteId) return null;
+    key = getAuthedEmailKey();
+  } catch (e) {
+    console.warn(
+      "[notifications:getInviteSummary] failed",
+      { authEmail: auth.currentUser?.email, inviteId, path: null },
+      e
+    );
+    return null;
+  }
+  if (!inviteId) return null;
 
+  const path = `pending_requests/${key}/requests/${inviteId}`;
+
+  try {
     const ref = doc(collection(doc(db, "pending_requests", key), "requests"), inviteId);
     const snap = await getDoc(ref);
     if (!snap.exists()) return null;
@@ -46,7 +57,11 @@ export async function getInviteSummary(
       role: data?.role,
     };
   } catch (e) {
-    console.warn("[notifications:getInviteSummary] failed", { invitedEmail, inviteId }, e);
+    console.warn(
+      "[notifications:getInviteSummary] failed",
+      { authEmail: auth.currentUser?.email, usedKey: key, inviteId, path },
+      e
+    );
     return null;
   }
 }
@@ -65,8 +80,8 @@ export async function acceptInviteFromNotification(params: {
   const user = auth.currentUser;
   if (!user) throw new Error("Not authenticated");
 
-  const key = normalizeEmail(email);
-  if (!key || !notificationId) throw new Error("Invalid or expired invitation.");
+  const key = getAuthedEmailKey();
+  if (!notificationId) throw new Error("Invalid or expired invitation.");
 
   const lockKey = `${key}::${notificationId}`;
   const recent = RECENT_ACCEPTS.get(lockKey);
@@ -93,7 +108,7 @@ export async function acceptInviteFromNotification(params: {
     let invSnap: any | null = null;
     if (!projectId && inviteId) {
       const invRef = doc(collection(doc(db, "pending_requests", key), "requests"), inviteId);
-      invSnap = await getDocFs(invRef);
+      invSnap = await getDoc(invRef);
       if (invSnap.exists()) {
         const inv = invSnap.data() as any;
         const pid = (inv?.projectId || "").toString().trim();
@@ -122,7 +137,7 @@ export async function acceptInviteFromNotification(params: {
 
     if (!invSnap && inviteId) {
       const invRef = doc(collection(doc(db, "pending_requests", key), "requests"), inviteId);
-      invSnap = await getDocFs(invRef);
+      invSnap = await getDoc(invRef);
     }
     if (invSnap?.exists?.()) {
       const inv = invSnap.data() as any;
@@ -210,7 +225,9 @@ export async function acceptInviteFromNotification(params: {
       }, 1500);
       RECENT_ACCEPTS.set(lockKey, { result: res, timer: t });
     } catch {}
-  }).catch(() => {});
+  }).catch((err) => {
+    void err;
+  });
 
   return p;
 }
@@ -222,8 +239,8 @@ export async function declineInviteNotification(
 ) {
   // Keep your existing declineProjectInvite if you want,
   // but do NOT delete notification; just mark it read + status.
-  const key = normalizeEmail(invitedEmail);
-  if (!key || !inviteId) return;
+  const key = getAuthedEmailKey();
+  if (!inviteId) return;
 
   const batch = writeBatch(db);
 

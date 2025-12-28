@@ -17,23 +17,32 @@ import {
   writeBatch,
 } from "firebase/firestore";
 
-import { normalizeEmail } from "./keys";
+import { getAuthedEmailKey } from "./authed";
 
 function itemsCol(emailKey: string) {
   return collection(doc(db, "notifications", emailKey), "items");
 }
 
 export async function markNotificationRead(email: string, id: string) {
-  const key = normalizeEmail(email);
-  if (!key || !id) return;
+  let key: string;
+  try {
+    key = getAuthedEmailKey();
+  } catch {
+    return;
+  }
+  if (!id) return;
 
   const ref = doc(itemsCol(key), id);
   await updateDoc(ref, { unread: false, readAt: serverTimestamp() as any });
 }
 
 export async function markAllNotificationsRead(email: string) {
-  const key = normalizeEmail(email);
-  if (!key) return;
+  let key: string;
+  try {
+    key = getAuthedEmailKey();
+  } catch {
+    return;
+  }
 
   let cursor: QueryDocumentSnapshot | null = null;
   while (true) {
@@ -59,8 +68,13 @@ export async function markAllNotificationsRead(email: string) {
 }
 
 export async function deleteNotification(email: string, id: string) {
-  const key = normalizeEmail(email);
-  if (!key || !id) return;
+  let key: string;
+  try {
+    key = getAuthedEmailKey();
+  } catch {
+    return;
+  }
+  if (!id) return;
 
   await deleteDoc(doc(itemsCol(key), id));
 }

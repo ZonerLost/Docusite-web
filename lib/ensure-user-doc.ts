@@ -1,5 +1,5 @@
 import { auth, db } from '@/lib/firebase-client';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { normalizeEmail } from '@/lib/notifications';
 
 /**
@@ -8,21 +8,31 @@ import { normalizeEmail } from '@/lib/notifications';
  * Safe to call repeatedly. No-ops when not authenticated.
  */
 export async function ensureUserDoc(): Promise<void> {
-  try {
-    const u = auth.currentUser;
-    if (!u) return;
+  const u = auth.currentUser;
+  if (!u) return;
 
-    const email = normalizeEmail(u.email) || '';
+  const email = normalizeEmail(u.email) || '';
+  const userRef = doc(db, 'users', u.uid);
 
-    // /users/{uid} -> { email }
-    await setDoc(
-      doc(db, 'users', u.uid),
-      { email },
-      { merge: true }
-    );
+  const userSnap = await getDoc(userRef);
+  const createdAtMissing = !userSnap.exists() || userSnap.data()?.createdAt == null;
 
-    // /notifications/{email} -> ownership proof for rules
-    if (email) {
+  const base = {
+    email,
+    displayName: u.displayName || '',
+    photoURL: u.photoURL || '',
+    updatedAt: serverTimestamp() as any,
+  } as const;
+
+  await setDoc(
+    userRef,
+    createdAtMissing ? { ...base, createdAt: serverTimestamp() as any } : base,
+    { merge: true }
+  );
+
+  // Best-effort ownership proof for rules; does not block notifications.
+  if (email) {
+    try {
       await setDoc(
         doc(db, 'notifications', email),
         {
@@ -32,9 +42,9 @@ export async function ensureUserDoc(): Promise<void> {
         },
         { merge: true }
       );
+    } catch (e) {
+      try { console.warn('[ensureUserDoc] notifications root write failed', e); } catch {}
     }
-  } catch (e) {
-    try { console.warn('[ensureUserDoc] failed', e); } catch {}
   }
 }
 

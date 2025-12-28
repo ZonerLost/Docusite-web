@@ -2,7 +2,7 @@ import { db } from "@/lib/firebase-client";
 import { collection, doc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
 
 import type { NotificationDoc, NotificationUI } from "./types";
-import { normalizeEmail } from "./keys";
+import { getAuthedEmailKey } from "./authed";
 import { timeAgo } from "./time";
 
 const DEBUG_NOTIF = process.env.NEXT_PUBLIC_DEBUG_NOTIFICATIONS === "1";
@@ -27,8 +27,13 @@ export function subscribeUserNotifications(
   cb: (items: NotificationUI[]) => void,
   opts: SubscribeOptions = {}
 ) {
-  const key = normalizeEmail(email);
-  if (!key) return () => {};
+  let key: string;
+  try {
+    key = getAuthedEmailKey();
+  } catch (e) {
+    console.warn("[notifications:subscribe] Missing auth email; skipping", e);
+    return () => {};
+  }
 
   const dedupeInvites = opts.dedupeProjectInvites === true;
   const q = query(itemsCol(key), orderBy("time", "desc"), limit(50));

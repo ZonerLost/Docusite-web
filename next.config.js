@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Use a custom distDir to avoid Windows ACL issues with an existing `.next` folder.
+  distDir: '.nextjs',
   // Pages Router configuration
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',

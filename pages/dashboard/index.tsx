@@ -18,129 +18,8 @@ export default function Dashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [sortBy, setSortBy] = useState('ascending');
   
-  // Memoized initial project data to prevent recreation on every render
-  const initialProjects: ProjectCard[] = useMemo(() => [
-    {
-      id: '1',
-      name: 'Luxury Resort Development',
-      location: 'Malibu, California',
-      team: ['/avatar.png', '/avatar.png', '/avatar.png'],
-      lastUpdatedTime: '5 mins ago',
-      assignedTo: 'Sarah Johnson',
-      deadlineDate: 'Dec 15, 2024',
-      progress: 78,
-      status: 'in-progress',
-      clientName: 'Oceanview Properties LLC',
-      projectOwner: 'Sarah Johnson',
-      deadline: 'Dec 15, 2024',
-      members: 3
-    },
-    {
-      id: '2',
-      name: 'Office Complex Renovation',
-      location: 'Downtown Manhattan, NY',
-      team: ['/avatar.png', '/avatar.png'],
-      lastUpdatedTime: '1 hour ago',
-      assignedTo: 'Michael Chen',
-      deadlineDate: 'Jan 30, 2025',
-      progress: 45,
-      status: 'in-progress',
-      clientName: 'Manhattan Real Estate Group',
-      projectOwner: 'Michael Chen',
-      deadline: 'Jan 30, 2025',
-      members: 2
-    },
-    {
-      id: '3',
-      name: 'Shopping Mall Expansion',
-      location: 'Austin, Texas',
-      team: ['/avatar.png', '/avatar.png', '/avatar.png', '/avatar.png'],
-      lastUpdatedTime: '2 hours ago',
-      assignedTo: 'Emily Rodriguez',
-      deadlineDate: 'Nov 20, 2024',
-      progress: 100,
-      status: 'completed',
-      clientName: 'Texas Retail Holdings',
-      projectOwner: 'Emily Rodriguez',
-      deadline: 'Nov 20, 2024',
-      members: 4
-    },
-    {
-      id: '4',
-      name: 'Residential Tower',
-      location: 'Miami, Florida',
-      team: ['/avatar.png', '/avatar.png'],
-      lastUpdatedTime: '3 hours ago',
-      assignedTo: 'David Kim',
-      deadlineDate: 'Oct 10, 2024',
-      progress: 100,
-      status: 'completed',
-      clientName: 'Miami Beach Developers',
-      projectOwner: 'David Kim',
-      deadline: 'Oct 10, 2024',
-      members: 2
-    },
-    {
-      id: '5',
-      name: 'Tech Campus Construction',
-      location: 'Seattle, Washington',
-      team: ['/avatar.png', '/avatar.png', '/avatar.png'],
-      lastUpdatedTime: '1 day ago',
-      assignedTo: 'Lisa Wang',
-      deadlineDate: 'Sep 5, 2024',
-      progress: 100,
-      status: 'completed',
-      clientName: 'TechCorp Industries',
-      projectOwner: 'Lisa Wang',
-      deadline: 'Sep 5, 2024',
-      members: 3
-    },
-    {
-      id: '6',
-      name: 'Hospital Wing Addition',
-      location: 'Boston, Massachusetts',
-      team: ['/avatar.png', '/avatar.png'],
-      lastUpdatedTime: '2 days ago',
-      assignedTo: 'Robert Taylor',
-      deadlineDate: 'Aug 15, 2024',
-      progress: 25,
-      status: 'cancelled',
-      clientName: 'Boston Medical Center',
-      projectOwner: 'Robert Taylor',
-      deadline: 'Aug 15, 2024',
-      members: 2
-    },
-    {
-      id: '7',
-      name: 'Sports Complex',
-      location: 'Denver, Colorado',
-      team: ['/avatar.png', '/avatar.png', '/avatar.png'],
-      lastUpdatedTime: '3 days ago',
-      assignedTo: 'Jennifer Lee',
-      deadlineDate: 'Jul 30, 2024',
-      progress: 15,
-      status: 'cancelled',
-      clientName: 'Denver Sports Authority',
-      projectOwner: 'Jennifer Lee',
-      deadline: 'Jul 30, 2024',
-      members: 3
-    },
-    {
-      id: '8',
-      name: 'University Library',
-      location: 'Chicago, Illinois',
-      team: ['/avatar.png', '/avatar.png'],
-      lastUpdatedTime: '1 week ago',
-      assignedTo: 'Mark Thompson',
-      deadlineDate: 'Jun 20, 2024',
-      progress: 8,
-      status: 'cancelled',
-      clientName: 'University of Chicago',
-      projectOwner: 'Mark Thompson',
-      deadline: 'Jun 20, 2024',
-      members: 2
-    }
-  ], []);
+  const [currentUid, setCurrentUid] = useState<string | null>(null);
+  const [currentEmail, setCurrentEmail] = useState<string | null>(null);
 
   // State for managing projects
   const [projects, setProjects] = useState<ProjectCard[]>([]);
@@ -149,6 +28,9 @@ export default function Dashboard() {
   useEffect(() => {
     let stopProjects: null | (() => void) = null;
     const unsubAuth = onAuthStateChanged(auth, (u) => {
+      setCurrentUid(u?.uid ?? null);
+      setCurrentEmail(u?.email ?? null);
+
       // reset any existing subscription
       if (stopProjects) {
         try { stopProjects(); } catch {}
@@ -163,6 +45,31 @@ export default function Dashboard() {
       if (stopProjects) try { stopProjects(); } catch {}
     };
   }, []);
+
+  const isInvolved = (p: ProjectCardUI, uid: string | null, email: string | null) => {
+    if (!uid && !email) return false;
+    const e = (email || "").toLowerCase();
+
+    // Prefer raw doc if available
+    const raw = (p as any).raw;
+    if (raw) {
+      if (raw.ownerId === uid) return true;
+      if (Array.isArray(raw.collaboratorUids) && uid && raw.collaboratorUids.includes(uid)) return true;
+      if (Array.isArray(raw.collaborators)) {
+        return raw.collaborators.some((c: any) => {
+          if (uid && c?.uid && c.uid === uid) return true;
+          if (e && c?.email && String(c.email).toLowerCase() === e) return true;
+          return false;
+        });
+      }
+    }
+
+    // Fallback if raw is missing: use safe fields
+    const ownerName = ((p as any).projectOwner || "").trim().toLowerCase();
+    const assignedTo = (p.assignedTo || "").trim().toLowerCase();
+    const emailKey = e ? e.split("@")[0] : "";
+    return !!emailKey && (ownerName.includes(emailKey) || assignedTo.includes(emailKey));
+  };
 
   // Filter and sort projects based on search query and sortBy value
   const filteredAndSortedProjects = React.useMemo(() => {
@@ -179,29 +86,55 @@ export default function Dashboard() {
     
     // Then sort the filtered results
     const sorted = [...filtered];
+
+    const mineFirst = (a: ProjectCardUI, b: ProjectCardUI) => {
+      const aMine = isInvolved(a, currentUid, currentEmail) ? 1 : 0;
+      const bMine = isInvolved(b, currentUid, currentEmail) ? 1 : 0;
+      return bMine - aMine; // mine first
+    };
     
     switch (sortBy) {
       case 'ascending':
-        return sorted.sort((a, b) => a.name.localeCompare(b.name));
+        return sorted.sort((a, b) => {
+          const primary = mineFirst(a, b);
+          if (primary !== 0) return primary;
+          return a.name.localeCompare(b.name);
+        });
       case 'descending':
-        return sorted.sort((a, b) => b.name.localeCompare(a.name));
+        return sorted.sort((a, b) => {
+          const primary = mineFirst(a, b);
+          if (primary !== 0) return primary;
+          return b.name.localeCompare(a.name);
+        });
       case 'name':
-        return sorted.sort((a, b) => a.name.localeCompare(b.name));
+        return sorted.sort((a, b) => {
+          const primary = mineFirst(a, b);
+          if (primary !== 0) return primary;
+          return a.name.localeCompare(b.name);
+        });
       case 'date':
         return sorted.sort((a, b) => {
+          const primary = mineFirst(a, b);
+          if (primary !== 0) return primary;
           const aTs = a.lastUpdatedTs || 0;
           const bTs = b.lastUpdatedTs || 0;
           return bTs - aTs;
         });
       case 'status':
         return sorted.sort((a, b) => {
+          const primary = mineFirst(a, b);
+          if (primary !== 0) return primary;
           const statusOrder: Record<string, number> = { 'in-progress': 1, 'completed': 2, 'cancelled': 3 };
           return (statusOrder[a.status] || 0) - (statusOrder[b.status] || 0);
         });
       default:
-        return sorted;
+        return sorted.sort((a, b) => {
+          const primary = mineFirst(a, b);
+          if (primary !== 0) return primary;
+          return 0;
+        });
     }
-  }, [projects, sortBy, searchQuery]);
+  }, [projects, sortBy, searchQuery, currentUid, currentEmail]);
 
   const handleProjectClick = useCallback(async (project: ProjectCard) => {
     try {
