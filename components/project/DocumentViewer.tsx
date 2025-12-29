@@ -14,6 +14,7 @@ import {
   type PdfNoteInput,
   colorIntToHex,
 } from '@/services/pdfArtifacts';
+import { debounce, type DebouncedFn } from '@/utils/debounce';
 import { db } from '@/lib/firebase-client';
 import { doc, getDoc } from 'firebase/firestore';
 
@@ -73,6 +74,18 @@ type ReportAnnotation = {
   category: 'Structural' | 'Architectural' | 'MEP';
 };
 
+type PendingNoteSave = {
+  page: number;
+  input: PdfNoteInput;
+  svc: PdfArtifactService;
+  contextId: number;
+};
+
+type NoteSaveQueue = {
+  inFlight: Promise<void> | null;
+  pending: PendingNoteSave | null;
+};
+
 interface DocumentViewerProps {
   project: StoredProject;
   selectedFile?: { id: string; name: string; category?: string } | null;
@@ -100,9 +113,10 @@ type DocumentViewerHandle = {
   exportPagesAsImages: () => Promise<{ width: number; height: number; dataUrl: string }[]>;
 };
 
-const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
+const DocumentViewer = React.memo(forwardRef<DocumentViewerHandle, DocumentViewerProps>(
   ({ project, selectedFile, notes, selectedTool, activeTab, onAddNote, onAddImageNote, onUndo, onRedo, onSelectFile, penColor, penSize }, ref) => {
     const [showPdf, setShowPdf] = useState<boolean>(false);
+    const handleClosePdf = useCallback(() => setShowPdf(false), []);
     const { url: fileUrl, isLoading: isFileUrlLoading, error: fileUrlError } = useProjectFileUrl(project?.id, selectedFile?.name || null);
     const [isPdfLoaded, setIsPdfLoaded] = useState(false);
 
@@ -154,6 +168,18 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
       setIsFileListOpen(true);
     };
     const [annotations, setAnnotations] = useState<Annotation[]>([]);
+    const annotationsRef = useRef<Annotation[]>([]);
+    useEffect(() => {
+      annotationsRef.current = annotations;
+    }, [annotations]);
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+    const dirtyRef = useRef(false);
+    const saveContextIdRef = useRef(0);
+    const mountedRef = useRef(true);
+    const noteDraftTextRef = useRef<Map<string, string>>(new Map());
+    const dirtyNoteIdsRef = useRef<Set<string>>(new Set());
+    const noteSaveQueuesRef = useRef<Map<string, NoteSaveQueue>>(new Map());
+    const noteDebouncersRef = useRef<Map<string, DebouncedFn<(save: PendingNoteSave) => void>>>(new Map());
     const [isDrawing, setIsDrawing] = useState(false);
     const [drawingPath, setDrawingPath] = useState<{ x: number; y: number }[]>([]);
     const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null);
@@ -207,10 +233,14 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
     // Observe DOM changes inside the scroller to recompute page rects when pages render
     const mo = new MutationObserver(() => updatePageRects());
     mo.observe(pdfScrollEl, { childList: true, subtree: true });
+    // Observe size changes (e.g., responsive layout / split panes) so overlays stay aligned.
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => update()) : null;
+    ro?.observe(pdfScrollEl);
     return () => {
       pdfScrollEl.removeEventListener('scroll', update);
       window.removeEventListener('resize', update);
       mo.disconnect();
+      ro?.disconnect();
     };
   }, [pdfScrollEl, updatePageRects]);
 
@@ -330,6 +360,247 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
     });
     return result;
   }, []);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const setDirtyFlag = useCallback((next: boolean) => {
+    if (dirtyRef.current === next) return;
+    dirtyRef.current = next;
+    if (mountedRef.current) setHasUnsavedChanges(next);
+  }, []);
+
+  const syncDirtyFromRefs = useCallback(() => {
+    setDirtyFlag(dirtyNoteIdsRef.current.size > 0);
+  }, [setDirtyFlag]);
+
+  const startSavingNote = useCallback(
+    (noteId: string) => {
+      const q = noteSaveQueuesRef.current.get(noteId);
+      if (!q || q.inFlight) return;
+
+      q.inFlight = (async () => {
+        while (q.pending) {
+          const next = q.pending;
+          q.pending = null;
+
+          try {
+            await next.svc.updateNote(next.page, next.input);
+          } catch {
+            if (next.contextId !== saveContextIdRef.current) return;
+            dirtyNoteIdsRef.current.add(noteId);
+            syncDirtyFromRefs();
+            continue;
+          }
+
+          if (next.contextId !== saveContextIdRef.current) return;
+
+          const latestDraft = noteDraftTextRef.current.get(noteId);
+          if (!q.pending && (typeof latestDraft === 'undefined' || latestDraft === next.input.text)) {
+            noteDraftTextRef.current.delete(noteId);
+            dirtyNoteIdsRef.current.delete(noteId);
+            syncDirtyFromRefs();
+          }
+        }
+      })().finally(() => {
+        q.inFlight = null;
+        if (q.pending) startSavingNote(noteId);
+      });
+    },
+    [syncDirtyFromRefs],
+  );
+
+  const enqueueNoteSave = useCallback(
+    (save: PendingNoteSave) => {
+      const noteId = save.input.id;
+      let q = noteSaveQueuesRef.current.get(noteId);
+      if (!q) {
+        q = { inFlight: null, pending: null };
+        noteSaveQueuesRef.current.set(noteId, q);
+      }
+      q.pending = save;
+      dirtyNoteIdsRef.current.add(noteId);
+      syncDirtyFromRefs();
+      startSavingNote(noteId);
+    },
+    [startSavingNote, syncDirtyFromRefs],
+  );
+
+  const getDebouncedNoteSave = useCallback(
+    (noteId: string) => {
+      const existing = noteDebouncersRef.current.get(noteId);
+      if (existing) return existing;
+      const debounced = debounce((save: PendingNoteSave) => enqueueNoteSave(save), 800);
+      noteDebouncersRef.current.set(noteId, debounced);
+      return debounced;
+    },
+    [enqueueNoteSave],
+  );
+
+  const scheduleNoteSaveDebounced = useCallback(
+    (annotation: Annotation, nextText: string) => {
+      const svc = artifactServiceRef.current;
+      if (!svc || !annotation.page || (annotation.type !== 'text' && annotation.type !== 'note')) return;
+
+      noteDraftTextRef.current.set(annotation.id, nextText);
+      dirtyNoteIdsRef.current.add(annotation.id);
+      syncDirtyFromRefs();
+
+      const input: PdfNoteInput = {
+        id: annotation.id,
+        annType: annotation.type === 'note' ? 1 : 0,
+        position: { x: annotation.x, y: annotation.y },
+        text: nextText || '',
+        color: annotation.color || '#000000',
+        width: annotation.width || (annotation.type === 'note' ? 200 : 120),
+        height: annotation.height || (annotation.type === 'note' ? 60 : 32),
+      };
+
+      getDebouncedNoteSave(annotation.id)({
+        page: annotation.page || 1,
+        input,
+        svc,
+        contextId: saveContextIdRef.current,
+      });
+    },
+    [getDebouncedNoteSave, syncDirtyFromRefs],
+  );
+
+  const saveNoteImmediate = useCallback(
+    (annotation: Annotation, forcedText?: string) => {
+      const svc = artifactServiceRef.current;
+      if (!svc || !annotation.page || (annotation.type !== 'text' && annotation.type !== 'note')) return;
+
+      const noteId = annotation.id;
+      const nextText =
+        typeof forcedText === 'string'
+          ? forcedText
+          : (noteDraftTextRef.current.get(noteId) ?? annotation.content ?? '');
+
+      if (typeof forcedText === 'string') {
+        noteDraftTextRef.current.set(noteId, forcedText);
+      }
+
+      noteDebouncersRef.current.get(noteId)?.cancel();
+
+      const input: PdfNoteInput = {
+        id: annotation.id,
+        annType: annotation.type === 'note' ? 1 : 0,
+        position: { x: annotation.x, y: annotation.y },
+        text: nextText || '',
+        color: annotation.color || '#000000',
+        width: annotation.width || (annotation.type === 'note' ? 200 : 120),
+        height: annotation.height || (annotation.type === 'note' ? 60 : 32),
+      };
+
+      enqueueNoteSave({
+        page: annotation.page || 1,
+        input,
+        svc,
+        contextId: saveContextIdRef.current,
+      });
+    },
+    [enqueueNoteSave],
+  );
+
+  const forceSaveAll = useCallback(() => {
+    // Flush any pending debounced saves first (so they become queued immediate saves)
+    noteDebouncersRef.current.forEach((d) => d.flush());
+
+    const svc = artifactServiceRef.current;
+    if (!svc) return;
+    const contextId = saveContextIdRef.current;
+
+    for (const noteId of Array.from(dirtyNoteIdsRef.current)) {
+      const q = noteSaveQueuesRef.current.get(noteId);
+      if (q?.pending || q?.inFlight) continue;
+
+      const a = annotationsRef.current.find((x) => x.id === noteId);
+      if (!a || !a.page || (a.type !== 'text' && a.type !== 'note')) continue;
+
+      const draft = noteDraftTextRef.current.get(noteId);
+      const text = typeof draft === 'string' ? draft : (a.content || '');
+
+      const input: PdfNoteInput = {
+        id: a.id,
+        annType: a.type === 'note' ? 1 : 0,
+        position: { x: a.x, y: a.y },
+        text: text || '',
+        color: a.color || '#000000',
+        width: a.width || (a.type === 'note' ? 200 : 120),
+        height: a.height || (a.type === 'note' ? 60 : 32),
+      };
+
+      enqueueNoteSave({ page: a.page || 1, input, svc, contextId });
+    }
+  }, [enqueueNoteSave]);
+
+  useEffect(() => {
+    return () => {
+      // Best-effort: prevent state updates and flush pending saves on unmount.
+      mountedRef.current = false;
+      if (dirtyRef.current) forceSaveAll();
+      noteDebouncersRef.current.forEach((d) => d.cancel());
+      noteDebouncersRef.current.clear();
+    };
+  }, [forceSaveAll]);
+
+  const saveContextKey = React.useMemo(() => {
+    if (!project?.id || !selectedFile?.name || !fileUrl) return '';
+    const baseUrl = fileUrl.split('?')[0].split('#')[0];
+    return `${project.id}|${selectedFile.name}|${baseUrl}`;
+  }, [fileUrl, project?.id, selectedFile?.name]);
+
+  const saveContextKeyRef = useRef<string>('');
+
+  useEffect(() => {
+    const prev = saveContextKeyRef.current;
+    if (prev === saveContextKey) return;
+
+    // Best-effort: flush any pending saves before switching documents/files.
+    if (prev) forceSaveAll();
+
+    noteDebouncersRef.current.forEach((d) => d.cancel());
+    noteDebouncersRef.current.clear();
+    noteDraftTextRef.current.clear();
+    dirtyNoteIdsRef.current.clear();
+    noteSaveQueuesRef.current.clear();
+    setDirtyFlag(false);
+
+    historyRef.current = [[]];
+    historyIndexRef.current = 0;
+    setAnnotations([]);
+
+    saveContextIdRef.current += 1;
+    saveContextKeyRef.current = saveContextKey;
+  }, [forceSaveAll, saveContextKey, setDirtyFlag]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key !== 's' && e.key !== 'S') return;
+      if (!dirtyRef.current) return;
+      e.preventDefault();
+      forceSaveAll();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [forceSaveAll]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   useEffect(() => {
     if (!project?.id || !fileUrl || !selectedFile?.name || !isPdfLoaded) {
@@ -1030,6 +1301,10 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
 
       if (!selectedTool) return;
 
+      // If user interacted with an existing annotation element, don't create a new one.
+      const target = e.target as Element | null;
+      if (target?.closest?.('[data-annotation-root="true"]')) return;
+
       // If click isn't inside the PDF scroller area, ignore
       if (pdfScrollEl) {
         const r = pdfScrollEl.getBoundingClientRect();
@@ -1040,9 +1315,10 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
       // Only handle specific tools that create annotations on click
       if (selectedTool === 'text') {
         // Create text box on single click
-        const pageIdx = getPageIndexFromClientPoint(e.clientX, e.clientY);
+        const hitPageIdx = getPageIndexFromClientPoint(e.clientX, e.clientY);
+        const pageIdx = hitPageIdx >= 0 ? hitPageIdx : getFirstVisiblePageIndex();
         const pr = pageRects[pageIdx] || { width: 1, height: 1, left: 0, top: 0 };
-        const local = getPointInPageSpace(e, pageIdx >= 0 ? pageIdx : 0);
+        const local = getPointInPageSpace(e, pageIdx);
         const newAnnotation: Annotation = {
           id: Date.now().toString(),
           type: 'text',
@@ -1053,7 +1329,7 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
           content: '',
           color: '#000000',
           isNew: true,
-          page: (pageIdx >= 0 ? pageIdx : 0) + 1,
+          page: pageIdx + 1,
           normX: Math.max(0, Math.min(1, local.x / Math.max(1, pr.width))),
           normY: Math.max(0, Math.min(1, local.y / Math.max(1, pr.height))),
           normW: 120 / Math.max(1, pr.width),
@@ -1132,7 +1408,7 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
           saveToHistory(newAnnotations);
         }
       }
-    }, [activeTab, selectedTool, isDrawing, annotations, saveToHistory, isPointNearLine]);
+    }, [activeTab, selectedTool, isDrawing, annotations, saveToHistory, isPointNearLine, getFirstVisiblePageIndex, getPageIndexFromClientPoint, getPointInPageSpace, getPointInPdfSpace, pageRects, pdfScrollEl]);
 
     const getAnnotationScreenBox = useCallback((a: Annotation): { left: number; top: number; width: number; height: number } => {
       if (a.page && pageRects[a.page - 1] && typeof a.normX === 'number' && typeof a.normY === 'number') {
@@ -1150,6 +1426,31 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
         height: a.height || (a.type === 'text' ? 30 : 200),
       };
     }, [pageRects, pdfContentOffset.left, pdfContentOffset.top, pdfScroll.left]);
+
+    // Normalize legacy-loaded text annotations (no normX/Y) so they stay aligned on resize.
+    useEffect(() => {
+      if (!pageRects.length || !annotations.length) return;
+
+      let changed = false;
+      const next = annotations.map((a) => {
+        if (a.type !== 'text' || !a.page) return a;
+        if (typeof a.normX === 'number' && typeof a.normY === 'number') return a;
+        const pr = pageRects[a.page - 1];
+        if (!pr) return a;
+
+        const box = getAnnotationScreenBox(a);
+        const pageW = Math.max(1, pr.width);
+        const pageH = Math.max(1, pr.height);
+        const normX = Math.max(0, Math.min(1, (box.left - pr.left) / pageW));
+        const normY = Math.max(0, Math.min(1, (box.top - pr.top) / pageH));
+        const normW = box.width / pageW;
+        const normH = box.height / pageH;
+        changed = true;
+        return { ...a, normX, normY, normW, normH };
+      });
+
+      if (changed) setAnnotations(next);
+    }, [annotations, getAnnotationScreenBox, pageRects]);
 
     // Track which page a stroke starts on to normalize correctly
     const drawingPageIdxRef = useRef<number | null>(null);
@@ -1231,6 +1532,18 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
           });
           
           if (clickedDragAnnotation) {
+            // When Text tool is active, allow editing text/note annotations by clicking inside the box.
+            // Dragging remains available from the edge area (so text selection/typing stays smooth).
+            if ((clickedDragAnnotation.type === 'text' || clickedDragAnnotation.type === 'note') && selectedTool === 'text') {
+              const box = getAnnotationScreenBox(clickedDragAnnotation);
+              const inset = 12;
+              const inEditArea =
+                hitX >= box.left + inset &&
+                hitX <= box.left + box.width - inset &&
+                hitY >= box.top + inset &&
+                hitY <= box.top + box.height - inset;
+              if (inEditArea) return;
+            }
             e.preventDefault();
             e.stopPropagation();
             
@@ -1438,22 +1751,9 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
         setResizingAnnotationId(null);
         setResizeStart(null);
         saveToHistory(annotations);
-        if (artifactServiceRef.current && resizedId) {
+        if (resizedId) {
           const updated = annotations.find(a => a.id === resizedId);
-          if (updated && (updated.type === 'text' || updated.type === 'note') && updated.page) {
-            const input: PdfNoteInput = {
-              id: updated.id,
-              annType: updated.type === 'note' ? 1 : 0,
-              position: { x: updated.x, y: updated.y },
-              text: updated.content || '',
-              color: updated.color || '#000000',
-              width: updated.width || (updated.type === 'note' ? 200 : 120),
-              height: updated.height || (updated.type === 'note' ? 60 : 32),
-            };
-            artifactServiceRef.current
-              .updateNote(updated.page || 1, input)
-              .catch(() => undefined);
-          }
+          if (updated) saveNoteImmediate(updated);
         }
       } else if (draggingAnnotationId) {
         // Finish dragging
@@ -1462,22 +1762,9 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
         setDragStart(null);
         saveToHistory(annotations);
         try { document.body.style.userSelect = ''; } catch {}
-        if (artifactServiceRef.current && draggedId) {
+        if (draggedId) {
           const updated = annotations.find(a => a.id === draggedId);
-          if (updated && (updated.type === 'text' || updated.type === 'note') && updated.page) {
-            const input: PdfNoteInput = {
-              id: updated.id,
-              annType: updated.type === 'note' ? 1 : 0,
-              position: { x: updated.x, y: updated.y },
-              text: updated.content || '',
-              color: updated.color || '#000000',
-              width: updated.width || (updated.type === 'note' ? 200 : 120),
-              height: updated.height || (updated.type === 'note' ? 60 : 32),
-            };
-            artifactServiceRef.current
-              .updateNote(updated.page || 1, input)
-              .catch(() => undefined);
-          }
+          if (updated) saveNoteImmediate(updated);
         }
       } else {
         setIsDrawing(false);
@@ -1486,7 +1773,7 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
         setDraggingNote(null);
         saveToHistory(annotations);
       }
-    }, [isDrawing, drawingPath, annotations, saveToHistory, resizingAnnotationId, draggingAnnotationId, draggingNote]);
+    }, [isDrawing, drawingPath, annotations, saveToHistory, resizingAnnotationId, draggingAnnotationId, draggingNote, saveNoteImmediate]);
 
     // Touch support: delegate to mouse handlers so behavior stays consistent
     const handleTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
@@ -1565,6 +1852,9 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
         return (
           <div
             key={annotation.id}
+            data-annotation-root="true"
+            data-annotation-id={annotation.id}
+            data-annotation-type={annotation.type}
             className={`absolute ${annotation.type === 'text' || annotation.type === 'image' || annotation.type === 'note' ? 'pointer-events-auto' : 'pointer-events-none'}`}
             style={
               annotation.page && pageRects[annotation.page - 1] != null &&
@@ -1594,14 +1884,17 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
                       : 'border-blue-400 hover:border-blue-500 hover:shadow-md'
                   }`}
                   style={{
-                    width: annotation.width || 100,
-                    height: annotation.height || 30,
+                    width: '100%',
+                    height: '100%',
                     minWidth: 50,
                     minHeight: 30,
                     padding: '4px 8px',
                     boxSizing: 'border-box',
                     lineHeight: '1.2',
-                    verticalAlign: 'middle'
+                    verticalAlign: 'middle',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    overflowWrap: 'anywhere',
                   }}
                   contentEditable
                   suppressContentEditableWarning
@@ -1635,40 +1928,63 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
                     );
                     setAnnotations(updatedAnnotations);
                     saveToHistory(updatedAnnotations);
-                    if (artifactServiceRef.current && (annotation.type === 'text' || annotation.type === 'note') && annotation.page) {
-                      const updated = updatedAnnotations.find(a => a.id === annotation.id);
-                      if (updated) {
-                        const input: PdfNoteInput = {
-                          id: updated.id,
-                          annType: updated.type === 'note' ? 1 : 0,
-                          position: { x: updated.x, y: updated.y },
-                          text: updated.content || '',
-                          color: updated.color || '#000000',
-                          width: updated.width || (updated.type === 'note' ? 200 : 120),
-                          height: updated.height || (updated.type === 'note' ? 60 : 32),
-                        };
-                        artifactServiceRef.current
-                          .updateNote(updated.page || 1, input)
-                          .catch(() => undefined);
-                      }
-                    }
+                    const updated = updatedAnnotations.find(a => a.id === annotation.id);
+                    if (updated) saveNoteImmediate(updated, content);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Escape') {
                       e.currentTarget.blur();
+                      return;
+                    }
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      try {
+                        document.execCommand('insertText', false, '\n');
+                      } catch {
+                        const selection = window.getSelection();
+                        if (!selection || selection.rangeCount === 0) return;
+                        const range = selection.getRangeAt(0);
+                        range.deleteContents();
+                        range.insertNode(document.createTextNode('\n'));
+                        range.collapse(false);
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                      }
                     }
                   }}
                   onInput={(e) => {
-                    // Auto-resize text box based on content
                     const element = e.currentTarget;
-                    element.style.height = 'auto';
-                    element.style.height = Math.max(element.scrollHeight, 30) + 'px';
-                    // Mark as not new once user types something
                     const txt = element.textContent || '';
-                    if (txt.trim().length > 0 && annotation.isNew) {
-                      const updated = annotations.map(a => a.id === annotation.id ? { ...a, isNew: false } : a);
-                      setAnnotations(updated);
+                    const pageRect = annotation.page ? pageRects[annotation.page - 1] : undefined;
+                    const currentHeight =
+                      pageRect && typeof annotation.normH === 'number'
+                        ? annotation.normH * pageRect.height
+                        : (annotation.height || 30);
+                    const baseMinHeight = annotation.isNew ? currentHeight : 30;
+                    const nextHeight = Math.max(element.scrollHeight, baseMinHeight);
+                    const nextNormH = pageRect ? nextHeight / Math.max(1, pageRect.height) : annotation.normH;
+                    const shouldUnsetNew = txt.trim().length > 0 && annotation.isNew;
+                    const shouldUpdateHeight = Math.abs(nextHeight - currentHeight) > 1;
+
+                    if (shouldUnsetNew || shouldUpdateHeight) {
+                      setAnnotations((prev) =>
+                        prev.map((a) =>
+                          a.id === annotation.id
+                            ? {
+                                ...a,
+                                isNew: shouldUnsetNew ? false : a.isNew,
+                                height: shouldUpdateHeight ? nextHeight : a.height,
+                                normH: shouldUpdateHeight ? nextNormH : a.normH,
+                              }
+                            : a,
+                        ),
+                      );
                     }
+
+                    scheduleNoteSaveDebounced(
+                      shouldUpdateHeight ? { ...annotation, height: nextHeight, normH: nextNormH } : annotation,
+                      txt,
+                    );
                   }}
                 >
                   {annotation.content || (editingAnnotationId === annotation.id ? '' : 'Click to edit text')}
@@ -1742,23 +2058,8 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
                     const updated = annotations.map(a => a.id === annotation.id ? { ...a, content, isNew: trimmed ? false : a.isNew } : a);
                     setAnnotations(updated);
                     saveToHistory(updated);
-                    if (artifactServiceRef.current && (annotation.type === 'text' || annotation.type === 'note') && annotation.page) {
-                      const latest = updated.find(a => a.id === annotation.id);
-                      if (latest) {
-                        const input: PdfNoteInput = {
-                          id: latest.id,
-                          annType: latest.type === 'note' ? 1 : 0,
-                          position: { x: latest.x, y: latest.y },
-                          text: latest.content || '',
-                          color: latest.color || '#000000',
-                          width: latest.width || (latest.type === 'note' ? 200 : 120),
-                          height: latest.height || (latest.type === 'note' ? 60 : 32),
-                        };
-                        artifactServiceRef.current
-                          .updateNote(latest.page || 1, input)
-                          .catch(() => undefined);
-                      }
-                    }
+                    const latest = updated.find(a => a.id === annotation.id);
+                    if (latest) saveNoteImmediate(latest, content);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
@@ -1775,6 +2076,7 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
                       const updated = annotations.map(a => a.id === annotation.id ? { ...a, isNew: false } : a);
                       setAnnotations(updated);
                     }
+                    scheduleNoteSaveDebounced(annotation, txt);
                   }}
                 >
                   {annotation.content || (editingAnnotationId === annotation.id ? '' : 'Write a note')}
@@ -1950,7 +2252,7 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
                 {/* Category chips moved to header */}
                 {showPdf && fileUrl ? (
                   <div className="mb-6">
-                    <PdfInlineViewer fileUrl={fileUrl} onClose={() => setShowPdf(false)} onContainerRef={setPdfScrollEl} />
+                    <PdfInlineViewer fileUrl={fileUrl} onClose={handleClosePdf} onContainerRef={setPdfScrollEl} />
                   </div>
                 ) : null}
                 {!showPdf && (
@@ -2044,7 +2346,7 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, DocumentViewerProps>(
       </div>
     );
   }
-);
+));
 
 DocumentViewer.displayName = 'DocumentViewer';
 

@@ -35,21 +35,29 @@ const ProjectDetailsDashboardPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'view' | 'annotate'>('view');
   
-  const handleTabChange = (tab: 'view' | 'annotate') => {
+  const handleTabChange = useCallback((tab: 'view' | 'annotate') => {
     setActiveTab(tab);
-  };
+  }, []);
 
-  const handleUndo = () => {
+  const handleOpenReportMeta = useCallback(() => setIsReportMetaOpen(true), []);
+  const handleCloseReportMeta = useCallback(() => setIsReportMetaOpen(false), []);
+  const handleOpenAddNotes = useCallback(() => setIsAddNotesOpen(true), []);
+  const handleCloseAddNotes = useCallback(() => setIsAddNotesOpen(false), []);
+  const handleOpenAddPictures = useCallback(() => setIsAddPicturesOpen(true), []);
+  const handleCloseAddPictures = useCallback(() => setIsAddPicturesOpen(false), []);
+  const handleCloseNotes = useCallback(() => setIsNotesOpen(false), []);
+
+  const handleUndo = useCallback(() => {
     if (exportRef.current && 'undo' in exportRef.current) {
       (exportRef.current as any).undo();
     }
-  };
+  }, []);
 
-  const handleRedo = () => {
+  const handleRedo = useCallback(() => {
     if (exportRef.current && 'redo' in exportRef.current) {
       (exportRef.current as any).redo();
     }
-  };
+  }, []);
   const [selectedTool, setSelectedTool] = useState<'text' | 'shape' | 'image' | 'note' | 'highlight' | 'draw' | 'eraser' | null>(null);
   const [searchResults, setSearchResults] = useState<{ count: number; currentIndex: number }>({ count: 0, currentIndex: 0 });
   const exportRef = useRef<{ undo: () => void; redo: () => void; addImageAnnotation: (imageUrl: string, note: string) => void; addMultipleImages: (imageUrls: string[], note: string) => void; domRef: HTMLDivElement | null; exportPagesAsImages: () => Promise<{ width: number; height: number; dataUrl: string }[]> }>(null);
@@ -326,11 +334,11 @@ const ProjectDetailsDashboardPage: React.FC = () => {
         searchQuery={searchQuery}
         onSearchChange={handleSearchChange}
         onExportPdf={handleExportPdf}
-        onOpenReportMeta={() => setIsReportMetaOpen(true)}
+        onOpenReportMeta={handleOpenReportMeta}
         activeTab={activeTab}
         onTabChange={handleTabChange}
-        onAddNote={() => setIsAddNotesOpen(true)}
-        onAddImageNote={() => setIsAddPicturesOpen(true)}
+        onAddNote={handleOpenAddNotes}
+        onAddImageNote={handleOpenAddPictures}
         searchResults={searchResults}
         onNavigateSearch={navigateSearchResults}
         selectedTool={selectedTool}
@@ -353,8 +361,8 @@ const ProjectDetailsDashboardPage: React.FC = () => {
         notes={notes}
         selectedTool={selectedTool}
         activeTab={activeTab}
-        onAddNote={() => setIsAddNotesOpen(true)}
-        onAddImageNote={() => setIsAddPicturesOpen(true)}
+        onAddNote={handleOpenAddNotes}
+        onAddImageNote={handleOpenAddPictures}
         onUndo={handleUndo}
         onRedo={handleRedo}
         onSelectFile={handleSelectFile}
@@ -364,26 +372,26 @@ const ProjectDetailsDashboardPage: React.FC = () => {
 
       <NotesModal
         isOpen={isNotesOpen}
-        onClose={() => setIsNotesOpen(false)}
+        onClose={handleCloseNotes}
         onAdd={handleAddNote}
       />
 
       <AddNotesModal
         isOpen={isAddNotesOpen}
-        onClose={() => setIsAddNotesOpen(false)}
+        onClose={handleCloseAddNotes}
         onAdd={handleAddSimpleNote}
       />
 
       <AddPicturesWithNotesModal
         isOpen={isAddPicturesOpen}
-        onClose={() => setIsAddPicturesOpen(false)}
+        onClose={handleCloseAddPictures}
         onAdd={handleAddPicturesWithNotes}
       />
 
       <ReportMetaModal
         projectId={project.id}
         isOpen={isReportMetaOpen}
-        onClose={() => setIsReportMetaOpen(false)}
+        onClose={handleCloseReportMeta}
       />
     </div>
   );

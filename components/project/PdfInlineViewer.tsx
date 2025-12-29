@@ -1,3 +1,4 @@
+
 "use client";
 
 import React from "react";
@@ -13,20 +14,60 @@ type Props = {
   onContainerRef?: (el: HTMLDivElement | null) => void;
 };
 
-const PdfInlineViewer: React.FC<Props> = ({ fileUrl, onClose, height = "80vh", onContainerRef }) => {
+const PdfInlineViewer = React.memo(function PdfInlineViewer({
+  fileUrl,
+  onClose,
+  height = "80vh",
+  onContainerRef,
+}: Props) {
   const [numPages, setNumPages] = React.useState<number>(0);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [reloadTick, setReloadTick] = React.useState(0);
   const [iframeSrc, setIframeSrc] = React.useState<string | null>(null);
   const [proxiedUrl, setProxiedUrl] = React.useState<string | null>(null);
+
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
+
+  // ✅ Responsive page width (measured from container)
+  const [pageWidth, setPageWidth] = React.useState<number>(900);
+
   React.useEffect(() => {
     if (onContainerRef) onContainerRef(scrollRef.current);
     return () => {
       if (onContainerRef) onContainerRef(null);
     };
   }, [onContainerRef]);
+
+  // ✅ Measure container width and update on resize
+  React.useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const compute = () => {
+      // container width minus a little breathing room so it never clips
+      const w = el.clientWidth || 0;
+      const next = Math.max(280, w - 24); // 24px padding safety
+      setPageWidth(next);
+    };
+
+    compute();
+
+    // Prefer ResizeObserver when available
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => compute());
+      ro.observe(el);
+    } else {
+      // Fallback
+      window.addEventListener("resize", compute);
+    }
+
+    return () => {
+      if (ro) ro.disconnect();
+      else window.removeEventListener("resize", compute);
+    };
+  }, [fileUrl, iframeSrc, proxiedUrl]);
 
   // Configure pdf.js worker
   React.useEffect(() => {
@@ -120,7 +161,7 @@ const PdfInlineViewer: React.FC<Props> = ({ fileUrl, onClose, height = "80vh", o
 
   return (
     <div className="w-full border border-border-gray rounded-lg bg-white shadow-sm">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border-gray">
+      <div className="flex  z-[9999] items-center justify-between px-3 py-2 border-b border-border-gray">
         <span className="text-sm text-black font-medium">PDF Preview</span>
         {onClose && (
           <button
@@ -159,16 +200,15 @@ const PdfInlineViewer: React.FC<Props> = ({ fileUrl, onClose, height = "80vh", o
               <Page
                 key={`page_${i + 1}`}
                 pageNumber={i + 1}
-                width={900}
+                // ✅ Responsive width
+                width={pageWidth}
                 renderAnnotationLayer={false}
                 renderTextLayer={false}
               />
             ))}
           </Document>
         ) : (
-          <div className="p-6 text-sm text-red-600">
-            Unable to prepare PDF URL.
-          </div>
+          <div className="p-6 text-sm text-red-600">Unable to prepare PDF URL.</div>
         )}
 
         {error && (
@@ -186,7 +226,8 @@ const PdfInlineViewer: React.FC<Props> = ({ fileUrl, onClose, height = "80vh", o
       </div>
     </div>
   );
-};
+});
+
+PdfInlineViewer.displayName = "PdfInlineViewer";
 
 export default PdfInlineViewer;
- 
