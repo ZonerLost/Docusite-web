@@ -2,25 +2,40 @@ import React, { useEffect, useRef, useState } from 'react';
 import Button from '@/components/ui/Button';
 import Textarea from '@/components/ui/Textarea';
 import { XIcon, PlusIcon, TrashIcon } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 interface AddPicturesWithNotesModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (pictures: File[], note: string) => void;
+  onAdd: (pictures: File[], description: string) => void;
 }
 
-const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({
-  isOpen,
-  onClose,
-  onAdd,
-}) => {
+function usePreviewUrls(files: File[]) {
+  const [urls, setUrls] = useState<string[]>([]);
+  useEffect(() => {
+    const next = files.map((f) => URL.createObjectURL(f));
+    setUrls(next);
+    return () => {
+      next.forEach((u) => {
+        try {
+          URL.revokeObjectURL(u);
+        } catch {}
+      });
+    };
+  }, [files]);
+  return urls;
+}
+
+const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({ isOpen, onClose, onAdd }) => {
   const [pictures, setPictures] = useState<File[]>([]);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
-  const [note, setNote] = useState('');
+  const [description, setDescription] = useState('');
+  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const plusBtnRef = useRef<HTMLButtonElement>(null);
   const [choiceOpen, setChoiceOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const previewUrls = usePreviewUrls(pictures);
 
   // Camera state
   const [showCamera, setShowCamera] = useState(false);
@@ -128,7 +143,7 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({
     openCamera();
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (capturedUrl) {
       setError('Please tap "Use Photo" to add the captured image, or close camera.');
@@ -138,14 +153,32 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({
       setError('Please add at least one image.');
       return;
     }
-    onAdd(pictures, note.trim());
-    setPictures([]);
-    setSelectedIndices(new Set());
-    setNote('');
-    setError(null);
-    stopStream();
-    revokeCaptured();
-    onClose();
+
+    const toastId = toast.loading('Uploading photo(s)…');
+    setUploading(true);
+    try {
+      await onAdd(pictures, description.trim());
+      toast.success(pictures.length > 1 ? `${pictures.length} photos uploaded ✅` : 'Photo uploaded ✅', { id: toastId });
+      setPictures([]);
+      setSelectedIndices(new Set());
+      setDescription('');
+      setError(null);
+      stopStream();
+      revokeCaptured();
+      onClose();
+    } catch (err: any) {
+      const code = err?.code || err?.message || '';
+      const friendly =
+        code.includes('permission-denied') ? 'No permission to upload. Contact admin.' :
+        code.includes('unauthenticated') ? 'Please login again.' :
+        code.includes('canceled') ? 'Upload canceled.' :
+        code.includes('quota-exceeded') ? 'Storage quota exceeded.' :
+        'Upload failed. Please try again.';
+      toast.error(friendly, { id: toastId });
+      setError(friendly);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const toggleSelectPicture = (index: number) => {
@@ -166,7 +199,7 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({
     setSelectedIndices(new Set());
   };
 
-  const handleDone = () => {
+  const handleDone = async () => {
     if (capturedUrl) {
       setError('Please tap "Use Photo" to add the captured image, or close camera.');
       return;
@@ -176,14 +209,31 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({
       return;
     }
     const selected = pictures.filter((_, idx) => selectedIndices.has(idx));
-    onAdd(selected, note.trim());
-    setPictures([]);
-    setSelectedIndices(new Set());
-    setNote('');
-    setError(null);
-    stopStream();
-    revokeCaptured();
-    onClose();
+    const toastId = toast.loading('Uploading photo(s)…');
+    setUploading(true);
+    try {
+      await onAdd(selected, description.trim());
+      toast.success(selected.length > 1 ? `${selected.length} photos uploaded ✅` : 'Photo uploaded ✅', { id: toastId });
+      setPictures([]);
+      setSelectedIndices(new Set());
+      setDescription('');
+      setError(null);
+      stopStream();
+      revokeCaptured();
+      onClose();
+    } catch (err: any) {
+      const code = err?.code || err?.message || '';
+      const friendly =
+        code.includes('permission-denied') ? 'No permission to upload. Contact admin.' :
+        code.includes('unauthenticated') ? 'Please login again.' :
+        code.includes('canceled') ? 'Upload canceled.' :
+        code.includes('quota-exceeded') ? 'Storage quota exceeded.' :
+        'Upload failed. Please try again.';
+      toast.error(friendly, { id: toastId });
+      setError(friendly);
+    } finally {
+      setUploading(false);
+    }
   };
 
   useEffect(() => {
@@ -193,6 +243,7 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({
       setChoiceOpen(false);
       setSelectedIndices(new Set());
       setError(null);
+      setUploading(false);
       return;
     }
   }, [isOpen]);
@@ -205,7 +256,7 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({
         <div className="flex items-center justify-between mb-4">
           {selectedIndices.size === 0 ? (
             <>
-              <h2 className="text-lg font-semibold text-black">Add Pictures with notes</h2>
+              <h2 className="text-lg font-semibold text-black">Add Pictures with Description</h2>
               <button
                 onClick={onClose}
                 className="p-1 hover:bg-gray-100 rounded"
@@ -251,7 +302,7 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({
         </div>
         
         <p className="text-sm text-gray-600 mb-4">
-          Add your pictures & notes to this annotation.
+          Add your pictures & description to this annotation.
         </p>
 
         <form onSubmit={handleSubmit}>
@@ -268,7 +319,7 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({
                   onClick={() => toggleSelectPicture(index)}
                 >
                   <img
-                    src={URL.createObjectURL(picture)}
+                    src={previewUrls[index]}
                     alt={`Preview ${index + 1}`}
                     className={`w-16 h-16 object-cover rounded border ${selectedIndices.has(index) ? 'border-blue-500' : ''}`}
                   />
@@ -291,7 +342,8 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({
                 type="button"
                 onClick={handleAddPictures}
                 ref={plusBtnRef}
-                className="w-16 h-16 border-2 border-dashed border-gray-300 rounded flex items-center justify-center hover:border-gray-400 transition-colors"
+                className="w-16 h-16 border-2 border-dashed border-gray-300 rounded flex items-center justify-center hover:border-gray-400 transition-colors disabled:opacity-50"
+                disabled={uploading}
               >
                 <PlusIcon className="w-6 h-6 text-blue-500" />
               </button>
@@ -318,28 +370,29 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({
             {error && <div className="text-xs text-red-600 mt-1">{error}</div>}
           </div>
 
-          {/* Notes Section */}
+          {/* Description Section */}
           <div className="mb-4">
             <Textarea
-              label="Notes"
-              placeholder="Lorem ipsum ipsum dolor @kevinbacker"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
+              label="Description"
+              placeholder="Add a short description for these photos"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
               rows={3}
             />
           </div>
           
           <div className="w-full">
-            <Button 
-              type="submit" 
-              variant="primary"
-              size="md"
-              className="w-full"
-            >
-              Add
-            </Button>
-          </div>
-        </form>
+              <Button 
+                type="submit" 
+                variant="primary"
+                size="md"
+                className="w-full"
+                disabled={uploading}
+              >
+                {uploading ? 'Uploading…' : 'Add'}
+              </Button>
+            </div>
+          </form>
 
         {/* Camera overlay inside modal */}
         {showCamera && (

@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { getReportTemplate, ReportType } from './ReportTemplateConfig';
+import { CameraIcon } from 'lucide-react';
+import type { ProjectFilePhoto } from '@/components/project/documentViewer/types';
 
 type StoredProject = {
   id: string;
@@ -29,12 +31,7 @@ interface SiteInspectionReportTemplateProps {
   project: StoredProject;
   selectedFile?: { id: string; name: string; category?: string } | null;
   annotations: Annotation[];
-  photos: Array<{
-    id: string;
-    refId: string;
-    description: string;
-    url?: string;
-  }>;
+  photos: ProjectFilePhoto[];
   reportType?: ReportType;
   customData?: Record<string, any>;
 }
@@ -77,6 +74,13 @@ const SiteInspectionReportTemplate: React.FC<SiteInspectionReportTemplateProps> 
       case 'MEP': return '#F59E0B';
       default: return '#6B7280';
     }
+  };
+
+  const [photoPreview, setPhotoPreview] = useState<ProjectFilePhoto | null>(null);
+
+  const formatDate = (ms?: number) => {
+    if (!ms) return '';
+    return new Date(ms).toLocaleString();
   };
 
   // Calculate summary statistics
@@ -237,27 +241,61 @@ const SiteInspectionReportTemplate: React.FC<SiteInspectionReportTemplateProps> 
         </div>
       )}
 
-      Photo Gallery
-     //{template.sections.photoGallery && (
-        <div className="mb-8">
-          <h2 className="text-lg font-bold text-blue-600 mb-4">Photo Gallery</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {photos.map((photo, index) => (
-            <div key={photo.id} className="border border-gray-200 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">
-                Photo {index + 1} - Annotation {photo.refId}
-              </h3>
-              <div className="bg-gray-100 h-32 rounded flex items-center justify-center">
-                {/* Completely hide uploaded images - show nothing */}
-                <span className="text-gray-500 text-xs text-center">
-                  {photo.description || 'No description available'}
-                </span>
-              </div>
-            </div>
-          ))}
+      {/* Photo Index */}
+      <div className="mb-8">
+        <h2 className="text-lg font-bold text-blue-600 mb-4">Photo Index</h2>
+        <div className="overflow-x-auto border border-gray-200 rounded-lg">
+          <table className="w-full">
+            <thead className="bg-indigo-600 text-white">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-medium">Image</th>
+                <th className="px-3 py-2 text-left text-xs font-medium">Description</th>
+                <th className="px-3 py-2 text-left text-xs font-medium">Ref No</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {photos.map((photo) => (
+                <tr key={photo.id}>
+                  <td className="px-3 py-2 text-xs text-gray-700">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 rounded border border-gray-200 px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50"
+                      onClick={() => setPhotoPreview(photo)}
+                    >
+                      <CameraIcon className="w-4 h-4" />
+                      View
+                    </button>
+                  </td>
+                  <td className="px-3 py-2 text-xs text-gray-700">
+                    <div className="flex flex-col gap-1">
+                      <span className="font-medium text-gray-900">{photo.description || 'No description'}</span>
+                      <span className="text-gray-500">
+                        {photo.createdAtMs ? `Uploaded - ${formatDate(photo.createdAtMs)}` : 'Uploaded'}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-xs text-indigo-700 font-mono">
+                    <button
+                      type="button"
+                      onClick={() => setPhotoPreview(photo)}
+                      className="hover:underline"
+                    >
+                      {photo.refNo || '—'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {photos.length === 0 && (
+                <tr>
+                  <td className="px-3 py-3 text-xs text-gray-500" colSpan={3}>
+                    No photos uploaded yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
-        </div>
-      )}
+      </div>
 
       {/* Action Tracker */}
       {template.sections.actionTracker && (
@@ -281,6 +319,44 @@ const SiteInspectionReportTemplate: React.FC<SiteInspectionReportTemplateProps> 
             </tbody>
           </table>
         </div>
+        </div>
+      )}
+
+      {photoPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl p-4 relative">
+            <button
+              type="button"
+              className="absolute top-2 right-2 text-gray-500 hover:text-black"
+              onClick={() => setPhotoPreview(null)}
+              aria-label="Close preview"
+            >
+              ✕
+            </button>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">Ref: {photoPreview.refNo}</div>
+                  <div className="text-xs text-gray-600">{photoPreview.description || "No description"}</div>
+                  {photoPreview.createdAtMs && (
+                    <div className="text-[11px] text-gray-500">Uploaded {formatDate(photoPreview.createdAtMs)}</div>
+                  )}
+                </div>
+                <a
+                  href={photoPreview.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-indigo-600 hover:underline"
+                >
+                  Open in new tab
+                </a>
+              </div>
+              <div className="w-full border rounded-lg overflow-hidden bg-gray-50">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={photoPreview.url} alt={photoPreview.description || "Photo"} className="w-full object-contain" />
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
