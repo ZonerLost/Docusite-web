@@ -1,18 +1,24 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { useRouter } from 'next/router';
-import NotesModal from '@/components/modals/NotesModal';
-import AddNotesModal from '@/components/modals/AddNotesModal';
-import AddPicturesWithNotesModal from '@/components/modals/AddPicturesWithNotesModal';
-import ReportMetaModal from '@/components/modals/ReportMetaModal';
-import DocumentViewerHeader from '@/components/project/DocumentViewerHeader';
-import DocumentViewer from '@/components/project/DocumentViewer';
-import { useProjectFiles } from '@/hooks/useProjectFiles';
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { useRouter } from "next/router";
+import NotesModal from "@/components/modals/NotesModal";
+import AddNotesModal from "@/components/modals/AddNotesModal";
+import AddPicturesWithNotesModal from "@/components/modals/AddPicturesWithNotesModal";
+import ReportMetaModal from "@/components/modals/ReportMetaModal";
+import DocumentViewerHeader from "@/components/project/DocumentViewerHeader";
+import DocumentViewer from "@/components/project/DocumentViewer";
+import { useProjectFiles } from "@/hooks/useProjectFiles";
+import { useProjectFileUrl } from "@/hooks/useProjectFileUrl";
+import useProjectFilePhotos from "@/hooks/useProjectFilePhotos";
+import { ensureSignedIn } from "@/lib/auth.init";
+import { auth, db } from "@/lib/firebase-client";
+import { doc, getDoc } from "firebase/firestore";
+import toast from "react-hot-toast";
 
 type StoredProject = {
   id: string;
   name: string;
   clientName?: string;
-  status: 'in-progress' | 'completed' | 'cancelled';
+  status: "in-progress" | "completed" | "cancelled";
   location: string;
   projectOwner?: string;
   deadline?: string;
@@ -20,47 +26,92 @@ type StoredProject = {
   raw?: any;
 };
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return typeof btoa === "function" ? btoa(binary) : "";
+}
 
 const ProjectDetailsDashboardPage: React.FC = () => {
   const router = useRouter();
   const { projectId } = router.query as { projectId?: string };
 
   const [project, setProject] = useState<StoredProject | null>(null);
-  const [selectedFile, setSelectedFile] = useState<{ id: string; name: string; category?: string } | null>(null);
+  const [selectedFile, setSelectedFile] = useState<{
+    id: string;
+    name: string;
+    category?: string;
+  } | null>(null);
   const [notes, setNotes] = useState<string[]>([]);
   const [isNotesOpen, setIsNotesOpen] = useState(false);
   const [isAddNotesOpen, setIsAddNotesOpen] = useState(false);
   const [isAddPicturesOpen, setIsAddPicturesOpen] = useState(false);
   const [isReportMetaOpen, setIsReportMetaOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'view' | 'annotate'>('view');
-  
-  const handleTabChange = useCallback((tab: 'view' | 'annotate') => {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeTab, setActiveTab] = useState<"view" | "annotate">("view");
+
+  const handleTabChange = useCallback((tab: "view" | "annotate") => {
     setActiveTab(tab);
   }, []);
 
   const handleOpenReportMeta = useCallback(() => setIsReportMetaOpen(true), []);
-  const handleCloseReportMeta = useCallback(() => setIsReportMetaOpen(false), []);
+  const handleCloseReportMeta = useCallback(
+    () => setIsReportMetaOpen(false),
+    []
+  );
   const handleOpenAddNotes = useCallback(() => setIsAddNotesOpen(true), []);
   const handleCloseAddNotes = useCallback(() => setIsAddNotesOpen(false), []);
-  const handleOpenAddPictures = useCallback(() => setIsAddPicturesOpen(true), []);
-  const handleCloseAddPictures = useCallback(() => setIsAddPicturesOpen(false), []);
+  const handleOpenAddPictures = useCallback(
+    () => setIsAddPicturesOpen(true),
+    []
+  );
+  const handleCloseAddPictures = useCallback(
+    () => setIsAddPicturesOpen(false),
+    []
+  );
   const handleCloseNotes = useCallback(() => setIsNotesOpen(false), []);
 
   const handleUndo = useCallback(() => {
-    if (exportRef.current && 'undo' in exportRef.current) {
+    if (exportRef.current && "undo" in exportRef.current) {
       (exportRef.current as any).undo();
     }
   }, []);
 
   const handleRedo = useCallback(() => {
-    if (exportRef.current && 'redo' in exportRef.current) {
+    if (exportRef.current && "redo" in exportRef.current) {
       (exportRef.current as any).redo();
     }
   }, []);
-  const [selectedTool, setSelectedTool] = useState<'text' | 'shape' | 'image' | 'note' | 'highlight' | 'draw' | 'eraser' | null>(null);
-  const [searchResults, setSearchResults] = useState<{ count: number; currentIndex: number }>({ count: 0, currentIndex: 0 });
-  const exportRef = useRef<{ undo: () => void; redo: () => void; addImageAnnotation: (imageUrl: string, note: string) => void; addMultipleImages: (imageUrls: string[], note: string) => void; domRef: HTMLDivElement | null; exportPagesAsImages: () => Promise<{ width: number; height: number; dataUrl: string }[]> }>(null);
+  const [selectedTool, setSelectedTool] = useState<
+    | "select"
+    | "text"
+    | "image"
+    | "note"
+    | "highlight"
+    | "draw"
+    | "eraser"
+    | "rect"
+    | "circle"
+    | null
+  >(null);
+  const [searchResults, setSearchResults] = useState<{
+    count: number;
+    currentIndex: number;
+  }>({ count: 0, currentIndex: 0 });
+  const [isExporting, setIsExporting] = useState(false);
+  const exportRef = useRef<{
+    undo: () => void;
+    redo: () => void;
+    addImageAnnotation: (imageUrl: string, note: string) => void;
+    addMultipleImages: (imageUrls: string[], note: string) => void;
+    domRef: HTMLDivElement | null;
+    exportPagesAsImages: () => Promise<
+      { width: number; height: number; dataUrl: string }[]
+    >;
+  }>(null);
   // Extend ref type locally to call openCategory, if available
   const viewerRef = exportRef as React.MutableRefObject<{
     undo: () => void;
@@ -73,10 +124,18 @@ const ProjectDetailsDashboardPage: React.FC = () => {
     addNoteAnnotation?: (text: string, x?: number, y?: number) => void;
   } | null>;
   const { files: allFiles } = useProjectFiles(project?.id);
+  const { url: fileUrl } = useProjectFileUrl(
+    project?.id,
+    selectedFile?.name || null
+  );
+  const { photos } = useProjectFilePhotos(
+    project?.id || null,
+    selectedFile?.id || null
+  );
   const categories = React.useMemo(() => {
     const map = new Map<string, number>();
     allFiles.forEach((f) => {
-      const key = f.category || 'Others';
+      const key = f.category || "Others";
       map.set(key, (map.get(key) || 0) + 1);
     });
     return Array.from(map.entries()).map(([name, count]) => ({ name, count }));
@@ -84,29 +143,44 @@ const ProjectDetailsDashboardPage: React.FC = () => {
   const handleHeaderCategoryClick = useCallback((name: string) => {
     // Trigger DocumentViewer category open logic via ref
     viewerRef.current?.openCategory?.(name);
-    setActiveTab('view');
+    setActiveTab("view");
   }, []);
-
 
   // Pen settings shared between header (menu) and viewer
-  const [penColor, setPenColor] = useState<'black' | 'red' | 'blue' | 'green' | 'yellow'>('black');
-  const [penSize, setPenSize] = useState<'small' | 'medium' | 'large'>('medium');
-  const handlePenSettingsChange = useCallback((cfg: { color?: 'black' | 'red' | 'blue' | 'green' | 'yellow'; size?: 'small' | 'medium' | 'large' }) => {
-    if (cfg.color) setPenColor(cfg.color);
-    if (cfg.size) setPenSize(cfg.size);
-  }, []);
-  const handleSelectFile = useCallback((file: { id: string; name: string; category?: string }) => {
-    setSelectedFile(file);
-    try {
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem('selectedFile', JSON.stringify(file));
-      }
-    } catch {}
-  }, []);
+  const [penColor, setPenColor] = useState<
+    "black" | "red" | "blue" | "green" | "yellow"
+  >("black");
+  const [penSize, setPenSize] = useState<"small" | "medium" | "large">(
+    "medium"
+  );
+  const handlePenSettingsChange = useCallback(
+    (cfg: {
+      color?: "black" | "red" | "blue" | "green" | "yellow";
+      size?: "small" | "medium" | "large";
+    }) => {
+      if (cfg.color) setPenColor(cfg.color);
+      if (cfg.size) setPenSize(cfg.size);
+    },
+    []
+  );
+  const handleSelectFile = useCallback(
+    (file: { id: string; name: string; category?: string }) => {
+      setSelectedFile(file);
+      try {
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("selectedFile", JSON.stringify(file));
+        }
+      } catch {}
+    },
+    []
+  );
 
   useEffect(() => {
     try {
-      const raw = typeof window !== 'undefined' ? sessionStorage.getItem('currentProject') : null;
+      const raw =
+        typeof window !== "undefined"
+          ? sessionStorage.getItem("currentProject")
+          : null;
       if (raw) {
         const parsed = JSON.parse(raw) as StoredProject;
         setProject(parsed);
@@ -114,25 +188,37 @@ const ProjectDetailsDashboardPage: React.FC = () => {
         setProject({
           id: projectId,
           name: `Project ${projectId}`,
-          status: 'in-progress',
-          location: 'Not specified',
+          status: "in-progress",
+          location: "Not specified",
         });
       }
     } catch {
       if (projectId) {
-        setProject({ id: projectId, name: `Project ${projectId}`, status: 'in-progress', location: 'Not specified' });
+        setProject({
+          id: projectId,
+          name: `Project ${projectId}`,
+          status: "in-progress",
+          location: "Not specified",
+        });
       }
     }
 
     // Load selected file information
     try {
-      const fileRaw = typeof window !== 'undefined' ? sessionStorage.getItem('selectedFile') : null;
+      const fileRaw =
+        typeof window !== "undefined"
+          ? sessionStorage.getItem("selectedFile")
+          : null;
       if (fileRaw) {
-        const fileParsed = JSON.parse(fileRaw) as { id: string; name: string; category?: string };
+        const fileParsed = JSON.parse(fileRaw) as {
+          id: string;
+          name: string;
+          category?: string;
+        };
         setSelectedFile(fileParsed);
       }
     } catch (error) {
-      console.error('Error loading selected file:', error);
+      console.error("Error loading selected file:", error);
     }
   }, [projectId]);
 
@@ -161,7 +247,6 @@ const ProjectDetailsDashboardPage: React.FC = () => {
     }
   }, [notesKey]);
 
-
   // Handle adding notes with pictures
   const handleAddPicturesWithNotes = (pictures: File[], note: string) => {
     if (note.trim()) {
@@ -176,7 +261,7 @@ const ProjectDetailsDashboardPage: React.FC = () => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const imageUrl = e.target?.result as string;
-        if (viewerRef.current && 'addImageAnnotation' in viewerRef.current) {
+        if (viewerRef.current && "addImageAnnotation" in viewerRef.current) {
           (viewerRef.current as any).addImageAnnotation(imageUrl, note);
         }
       };
@@ -191,7 +276,7 @@ const ProjectDetailsDashboardPage: React.FC = () => {
     handleAddNote(note);
     try {
       viewerRef.current?.addNoteAnnotation?.(note);
-      setActiveTab('annotate');
+      setActiveTab("annotate");
     } catch {}
     setIsAddNotesOpen(false);
   };
@@ -200,11 +285,15 @@ const ProjectDetailsDashboardPage: React.FC = () => {
   const highlightSearchResults = (query: string) => {
     if (!exportRef.current?.domRef || !query.trim()) {
       // Remove all highlights
-      const highlights = exportRef.current?.domRef?.querySelectorAll('.search-highlight');
-      highlights?.forEach(highlight => {
+      const highlights =
+        exportRef.current?.domRef?.querySelectorAll(".search-highlight");
+      highlights?.forEach((highlight) => {
         const parent = highlight.parentNode;
         if (parent) {
-          parent.replaceChild(document.createTextNode(highlight.textContent || ''), highlight);
+          parent.replaceChild(
+            document.createTextNode(highlight.textContent || ""),
+            highlight
+          );
           parent.normalize();
         }
       });
@@ -213,21 +302,27 @@ const ProjectDetailsDashboardPage: React.FC = () => {
     }
 
     const element = exportRef.current.domRef;
-    const textContent = element.textContent || '';
-    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    const textContent = element.textContent || "";
+    const regex = new RegExp(
+      `(${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
+      "gi"
+    );
     const matches = textContent.match(regex);
-    
+
     if (!matches) {
       setSearchResults({ count: 0, currentIndex: 0 });
       return;
     }
 
     // Remove existing highlights
-    const existingHighlights = element.querySelectorAll('.search-highlight');
-    existingHighlights.forEach(highlight => {
+    const existingHighlights = element.querySelectorAll(".search-highlight");
+    existingHighlights.forEach((highlight) => {
       const parent = highlight.parentNode;
       if (parent) {
-        parent.replaceChild(document.createTextNode(highlight.textContent || ''), highlight);
+        parent.replaceChild(
+          document.createTextNode(highlight.textContent || ""),
+          highlight
+        );
         parent.normalize();
       }
     });
@@ -241,19 +336,26 @@ const ProjectDetailsDashboardPage: React.FC = () => {
 
     const textNodes: Text[] = [];
     let node;
-    while (node = walker.nextNode()) {
+    while ((node = walker.nextNode())) {
       textNodes.push(node as Text);
     }
 
-    textNodes.forEach(textNode => {
-      const text = textNode.textContent || '';
+    textNodes.forEach((textNode) => {
+      const text = textNode.textContent || "";
       if (regex.test(text)) {
         const parent = textNode.parentNode;
-        if (parent && parent.nodeName !== 'SCRIPT' && parent.nodeName !== 'STYLE') {
-          const highlightedHTML = text.replace(regex, '<span class="search-highlight">$1</span>');
-          const wrapper = document.createElement('div');
+        if (
+          parent &&
+          parent.nodeName !== "SCRIPT" &&
+          parent.nodeName !== "STYLE"
+        ) {
+          const highlightedHTML = text.replace(
+            regex,
+            '<span class="search-highlight">$1</span>'
+          );
+          const wrapper = document.createElement("div");
           wrapper.innerHTML = highlightedHTML;
-          
+
           while (wrapper.firstChild) {
             parent.insertBefore(wrapper.firstChild, textNode);
           }
@@ -273,17 +375,20 @@ const ProjectDetailsDashboardPage: React.FC = () => {
   };
 
   // Navigate between search results
-  const navigateSearchResults = (direction: 'next' | 'prev') => {
+  const navigateSearchResults = (direction: "next" | "prev") => {
     if (searchResults.count === 0) return;
 
-    const highlights = exportRef.current?.domRef?.querySelectorAll('.search-highlight');
+    const highlights =
+      exportRef.current?.domRef?.querySelectorAll(".search-highlight");
     if (!highlights) return;
 
     // Remove current active highlight
-    highlights.forEach(highlight => highlight.classList.remove('search-highlight-active'));
+    highlights.forEach((highlight) =>
+      highlight.classList.remove("search-highlight-active")
+    );
 
     let newIndex = searchResults.currentIndex;
-    if (direction === 'next') {
+    if (direction === "next") {
       newIndex = newIndex >= searchResults.count ? 1 : newIndex + 1;
     } else {
       newIndex = newIndex <= 1 ? searchResults.count : newIndex - 1;
@@ -291,32 +396,144 @@ const ProjectDetailsDashboardPage: React.FC = () => {
 
     // Add active highlight to current result
     if (highlights[newIndex - 1]) {
-      highlights[newIndex - 1].classList.add('search-highlight-active');
-      highlights[newIndex - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      highlights[newIndex - 1].classList.add("search-highlight-active");
+      highlights[newIndex - 1].scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
     }
 
-    setSearchResults(prev => ({ ...prev, currentIndex: newIndex }));
+    setSearchResults((prev) => ({ ...prev, currentIndex: newIndex }));
   };
 
   const handleExportPdf = useCallback(async () => {
+    if (isExporting) return;
     if (!exportRef.current) return;
-    try {
-      const pages = await exportRef.current.exportPagesAsImages();
-      if (!pages || pages.length === 0) return;
-      const { jsPDF } = await import('jspdf');
-      const first = pages[0];
-      const pdf = new jsPDF({ orientation: 'p', unit: 'px', format: [first.width, first.height] });
-      pdf.addImage(first.dataUrl, 'JPEG', 0, 0, first.width, first.height);
-      for (let i = 1; i < pages.length; i++) {
-        const p = pages[i];
-        pdf.addPage([p.width, p.height]);
-        pdf.addImage(p.dataUrl, 'JPEG', 0, 0, p.width, p.height);
-      }
-      pdf.save(`${project?.name || 'project-details'}.pdf`);
-    } catch (err) {
-      console.error('Export failed:', err);
+    if (!project?.id) {
+      toast.error("Missing project details.");
+      return;
     }
-  }, [project?.name]);
+    if (!selectedFile?.name) {
+      toast.error("Select a PDF to export.");
+      return;
+    }
+    if (!fileUrl) {
+      toast.error("Unable to resolve the PDF file URL.");
+      return;
+    }
+
+    setIsExporting(true);
+    const toastId = toast.loading("Generating report...");
+    try {
+      await ensureSignedIn();
+      const pages = await exportRef.current.exportPagesAsImages();
+      if (!pages?.length) {
+        throw new Error("No pages available to export.");
+      }
+
+      let projectMeta = {
+        id: project.id,
+        name: project.name,
+        clientName: project.clientName,
+        projectOwner: project.projectOwner,
+        description: "",
+        conclusion: "",
+        ownerName: "",
+        ownerEmail: "",
+      };
+
+      try {
+        const snap = await getDoc(doc(db, "projects", project.id));
+        if (snap.exists()) {
+          const data = snap.data() as any;
+          projectMeta = {
+            ...projectMeta,
+            name: data.title || projectMeta.name,
+            clientName: data.clientName || projectMeta.clientName,
+            projectOwner: data.projectOwner || projectMeta.projectOwner,
+            description: data.description || "",
+            conclusion: data.conclusion || "",
+            ownerName: data.ownerName || "",
+            ownerEmail: data.ownerEmail || "",
+          };
+        }
+      } catch (err) {
+        console.warn("Failed to fetch report metadata:", err);
+      }
+
+      const { buildReportPdf } = await import("@/lib/pdf/reportExport");
+      const pdfBytes = await buildReportPdf({
+        project: projectMeta,
+        fileName: selectedFile.name,
+        pages,
+        photos,
+      });
+
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch("/api/export/project-report", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          projectId: project.id,
+          pdfId: selectedFile.id,
+          fileName: selectedFile.name,
+          fileUrl,
+          pdfBase64: bytesToBase64(pdfBytes),
+        }),
+      });
+
+      if (!res.ok) {
+        let message = "Export failed.";
+        try {
+          const payload = await res.json();
+          message = payload?.error || message;
+        } catch {}
+        throw new Error(message);
+      }
+
+      const payload = await res.json();
+      toast.success("Report exported.", { id: toastId });
+      if (payload?.url) {
+        window.open(payload.url, "_blank", "noopener,noreferrer");
+      }
+    } catch (err: any) {
+      console.error("Export failed:", err);
+      toast.error(err?.message || "Export failed.", { id: toastId });
+    } finally {
+      setIsExporting(false);
+    }
+  }, [
+    isExporting,
+    exportRef,
+    project?.id,
+    project?.name,
+    project?.clientName,
+    project?.projectOwner,
+    selectedFile?.name,
+    selectedFile?.id,
+    fileUrl,
+    photos,
+  ]);
+
+  const handleToolSelect = useCallback((tool: any) => {
+    if (
+      tool === "select" ||
+      tool === "text" ||
+      tool === "image" ||
+      tool === "note" ||
+      tool === "highlight" ||
+      tool === "draw" ||
+      tool === "eraser" ||
+      tool === "rect" ||
+      tool === "circle" ||
+      tool === null
+    ) {
+      setSelectedTool(tool);
+    }
+  }, []);
 
   if (!project) {
     return (
@@ -327,7 +544,7 @@ const ProjectDetailsDashboardPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-0">
+    <div className="flex h-screen min-h-0 flex-col bg-gray-100 p-0">
       <DocumentViewerHeader
         projectName={project.name}
         selectedFile={selectedFile}
@@ -342,33 +559,33 @@ const ProjectDetailsDashboardPage: React.FC = () => {
         searchResults={searchResults}
         onNavigateSearch={navigateSearchResults}
         selectedTool={selectedTool}
-        onToolSelect={setSelectedTool}
+        onToolSelect={handleToolSelect}
         onUndo={handleUndo}
         onRedo={handleRedo}
         categories={categories}
         onCategoryClick={handleHeaderCategoryClick}
-
         penColor={penColor}
         penSize={penSize}
         onPenSettingsChange={handlePenSettingsChange}
-        onAddPicturesWithNotes={handleAddPicturesWithNotes}
       />
 
-      <DocumentViewer
-        ref={exportRef}
-        project={project}
-        selectedFile={selectedFile}
-        notes={notes}
-        selectedTool={selectedTool}
-        activeTab={activeTab}
-        onAddNote={handleOpenAddNotes}
-        onAddImageNote={handleOpenAddPictures}
-        onUndo={handleUndo}
-        onRedo={handleRedo}
-        onSelectFile={handleSelectFile}
-        penColor={penColor}
-        penSize={penSize}
-      />
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <DocumentViewer
+          ref={exportRef}
+          project={project}
+          selectedFile={selectedFile}
+          notes={notes}
+          selectedTool={selectedTool}
+          activeTab={activeTab}
+          onAddNote={handleOpenAddNotes}
+          onAddImageNote={handleOpenAddPictures}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          onSelectFile={handleSelectFile}
+          penColor={penColor}
+          penSize={penSize}
+        />
+      </div>
 
       <NotesModal
         isOpen={isNotesOpen}

@@ -27,10 +27,11 @@ export function useClickOutside<T extends HTMLElement>(
     };
 
     document.addEventListener('mousedown', listener);
-    document.addEventListener('touchstart', listener);
+    const touchOptions: AddEventListenerOptions = { passive: false };
+    document.addEventListener('touchstart', listener, touchOptions);
     return () => {
       document.removeEventListener('mousedown', listener);
-      document.removeEventListener('touchstart', listener);
+      document.removeEventListener('touchstart', listener, touchOptions);
     };
   }, [enabled, handler, ignoreRefs, ref]);
 }

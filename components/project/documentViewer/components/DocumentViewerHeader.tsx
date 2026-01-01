@@ -83,7 +83,7 @@ export default function DocumentViewerHeader(props: Props) {
   const [photosModalOpen, setPhotosModalOpen] = React.useState(false);
 
   return (
-    <div className="bg-white border-b border-border-gray rounded-t-xl sticky top-0 z-40">
+    <div className="bg-white border-b border-border-gray rounded-t-xl sticky top-0 z-50">
       {/* Top Row */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between px-4 sm:px-6 py-4 gap-4">
         <div className="flex flex-col gap-2 min-w-0">
@@ -154,11 +154,11 @@ export default function DocumentViewerHeader(props: Props) {
           </div>
 
           <div className="flex items-center gap-2">
-            {onOpenReportMeta && (
+            {/* {onOpenReportMeta && (
               <Button type="button" variant="secondary" className="hidden sm:inline-flex" onClick={onOpenReportMeta}>
                 Report Info
               </Button>
-            )}
+            )} */}
             <Button onClick={onExportPdf} variant="primary" className="w-full sm:w-auto">
               <span className="hidden sm:inline">Save & Export</span>
               <span className="sm:hidden">Export</span>

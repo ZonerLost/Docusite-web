@@ -12,8 +12,6 @@ const nextConfig = {
   images: {
     formats: ['image/webp', 'image/avif'],
     minimumCacheTTL: 60,
-    // Explicitly allow placeholder domain for dev avatars
-    domains: ['placehold.co'],
     remotePatterns: [
       {
         protocol: 'https',

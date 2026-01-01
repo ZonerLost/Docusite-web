@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-'use client';
+"use client";
 
-import { db, auth, storage } from '@/lib/firebase-client';
+import { db, auth, storage } from "@/lib/firebase-client";
 import {
   collection,
   doc,
@@ -11,16 +11,18 @@ import {
   serverTimestamp,
   setDoc,
   deleteDoc,
-  DocumentReference,
-  CollectionReference,
-} from 'firebase/firestore';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { sha1 } from 'js-sha1';
+  type DocumentReference,
+  type CollectionReference,
+} from "firebase/firestore";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { sha1 } from "js-sha1";
 
 export type DocPoint = { x: number; y: number };
 
+export type NormRect = { x: number; y: number; w: number; h: number };
+
 export type StrokeArtifact = {
-  type: 'stroke';
+  type: "stroke";
   color: number;
   width: number;
   toolType: number;
@@ -30,9 +32,9 @@ export type StrokeArtifact = {
 };
 
 export type AnnotationArtifact = {
-  type: 'annotation';
+  type: "annotation";
   id: string;
-  annType: number; // 0 = text, 1 = sticky note (AnnotationToolType)
+  annType: number; 
   position: DocPoint;
   text: string;
   color: number;
@@ -41,16 +43,21 @@ export type AnnotationArtifact = {
 };
 
 export type CameraPinArtifact = {
-  type: 'cameraPin';
+  type: "cameraPin";
   id: string;
-  position: DocPoint;
+  position: DocPoint; // (your current system stores absolute pdf-space; keep for backward compat)
   imagePath: string;
-  createdAt: number; // epoch ms
+  createdAt: number;
   note?: string;
+
+  rect?: NormRect;
+  normX?: number;
+  normY?: number;
+  normW?: number;
+  normH?: number;
 };
 
 export type PageArtifacts = Array<StrokeArtifact | AnnotationArtifact | CameraPinArtifact>;
-
 export type PdfArtifactsByPage = Record<string, PageArtifacts>;
 
 export type StrokeInput = {
@@ -74,21 +81,28 @@ export type PdfNoteInput = {
 
 export type CameraPinInput = {
   id: string;
-  position: DocPoint;
+  position: DocPoint; 
   imagePath: string;
   createdAt: Date;
   note?: string;
+
+  rect?: NormRect;
+  normX?: number;
+  normY?: number;
+  normW?: number;
+  normH?: number;
 };
 
 export function colorHexToInt(hex: string): number {
   const trimmed = hex.trim();
   if (!trimmed) return 0xff000000;
-  const h = trimmed.startsWith('#') ? trimmed.slice(1) : trimmed;
-  const normalized = h.length === 3
-    ? h.split('').map((c) => c + c).join('')
-    : h.length === 6
-      ? h
-      : h.slice(-6);
+  const h = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
+  const normalized =
+    h.length === 3
+      ? h.split("").map((c) => c + c).join("")
+      : h.length === 6
+        ? h
+        : h.slice(-6);
   const rgb = parseInt(normalized, 16);
   if (Number.isNaN(rgb)) return 0xff000000;
   return (0xff << 24) | rgb;
@@ -96,42 +110,112 @@ export function colorHexToInt(hex: string): number {
 
 export function colorIntToHex(value: number): string {
   const rgb = value & 0xffffff;
-  return `#${rgb.toString(16).padStart(6, '0')}`;
+  return `#${rgb.toString(16).padStart(6, "0")}`;
+}
+
+const envDebug = process.env.NEXT_PUBLIC_DEBUG_PDF === "1";
+
+function isDebugEnabled(): boolean {
+  if (envDebug) return true;
+  if (typeof window === "undefined") return false;
+  try {
+    const w = window as any;
+    if (w.__DEBUG_PDF === true) return true;
+    return window.localStorage?.getItem("DEBUG_PDF") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function logCommit(path: string, payload: unknown) {
+  if (isDebugEnabled()) {
+    console.log("[PDF-ARTIFACTS] committing", { path, payload });
+  }
+}
+
+function logCommitError(error: unknown, payload: unknown) {
+  if (isDebugEnabled()) {
+    console.error("[PDF-ARTIFACTS] commit failed", { error, payload });
+  }
+}
+
+const INFLIGHT_COUNTERS = new Map<string, Promise<number>>();
+
+function isPlainObject(value: unknown): value is Record<string, any> {
+  if (!value || typeof value !== "object") return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function clean(value: any): any {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value === "string") return value;
+  if (value instanceof String) return value.toString();
+  if (typeof value === "boolean") return value;
+  if (Array.isArray(value)) {
+    return value.map(clean).filter((v) => v !== undefined);
+  }
+  if (isPlainObject(value)) {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(value)) {
+      const cv = clean(v);
+      if (cv !== undefined) out[k] = cv;
+    }
+    return out;
+  }
+  return value;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, value));
+}
+
+function normalizeRect(rect?: NormRect | null): NormRect | undefined {
+  if (!rect) return undefined;
+  const { x, y, w, h } = rect;
+  if (![x, y, w, h].every(isFiniteNumber)) return undefined;
+  if (w <= 0 || h <= 0) return undefined;
+  return { x: clamp01(x), y: clamp01(y), w: clamp01(w), h: clamp01(h) };
 }
 
 function makeStableFileId(url: string, name: string, overrideKey?: string): string {
-  if (overrideKey && overrideKey.length > 0) {
-    return sha1(overrideKey);
-  }
+  if (overrideKey && overrideKey.length > 0) return sha1(overrideKey);
 
-  const noQuery = url.split('?')[0].split('#')[0];
+  const noQuery = url.split("?")[0].split("#")[0];
 
   try {
     const u = new URL(url);
     let canonical: string | null = null;
 
-    if (u.protocol === 'gs:') {
+    if (u.protocol === "gs:") {
       canonical = `${u.host}${u.pathname}`;
-    } else if (u.host === 'firebasestorage.googleapis.com') {
-      const seg = u.pathname.split('/').filter(Boolean);
-      const bIdx = seg.indexOf('b');
-      const oIdx = seg.indexOf('o');
+    } else if (u.host === "firebasestorage.googleapis.com") {
+      const seg = u.pathname.split("/").filter(Boolean);
+      const bIdx = seg.indexOf("b");
+      const oIdx = seg.indexOf("o");
       if (bIdx !== -1 && bIdx + 1 < seg.length && oIdx !== -1 && oIdx + 1 < seg.length) {
         const bucket = seg[bIdx + 1];
         const encodedObject = seg[oIdx + 1];
         const objectPath = decodeURIComponent(encodedObject);
         canonical = `${bucket}/${objectPath}`;
       }
-    } else if (u.host === 'storage.googleapis.com' && u.pathname.split('/').filter(Boolean).length >= 2) {
-      const seg = u.pathname.split('/').filter(Boolean);
+    } else if (u.host === "storage.googleapis.com" && u.pathname.split("/").filter(Boolean).length >= 2) {
+      const seg = u.pathname.split("/").filter(Boolean);
       const bucket = seg[0];
-      const objectPath = seg.slice(1).join('/');
+      const objectPath = seg.slice(1).join("/");
       canonical = `${bucket}/${objectPath}`;
     }
 
     const base = (canonical ?? noQuery).toLowerCase();
-    const material = `${base}|${name.toLowerCase()}`;
-    return sha1(material);
+    return sha1(`${base}|${name.toLowerCase()}`);
   } catch {
     return sha1(`${noQuery.toLowerCase()}|${name.toLowerCase()}`);
   }
@@ -151,40 +235,98 @@ export class PdfArtifactService {
     this.fileName = opts.fileName;
     this.fileId = makeStableFileId(this.fileUrl, this.fileName, opts.overrideKey);
 
-    this.fileDoc = this.projectId && this.projectId.length
-      ? doc(db, 'projects', this.projectId, 'files', this.fileId)
-      : doc(db, 'files', this.fileId);
+    this.fileDoc =
+      this.projectId && this.projectId.length
+        ? doc(db, "projects", this.projectId, "files", this.fileId)
+        : doc(db, "files", this.fileId);
   }
 
   async init(): Promise<void> {
     await this.ensureFileMeta();
   }
 
+  private assertWriteContext(): void {
+    const missing: string[] = [];
+    if (!this.fileUrl || !this.fileUrl.trim()) missing.push("fileUrl");
+    if (!this.fileName || !this.fileName.trim()) missing.push("fileName");
+    if (!this.fileId || !this.fileId.trim()) missing.push("fileId");
+    if (this.projectId !== null && this.projectId !== undefined && !String(this.projectId).trim()) {
+      missing.push("projectId");
+    }
+    if (missing.length) {
+      throw new Error(`[PDF-ARTIFACTS] Invalid write context: ${missing.join(", ")}`);
+    }
+  }
+
+  private assertNonEmptyId(label: string, value: string): void {
+    if (!value || !String(value).trim()) {
+      throw new Error(`[PDF-ARTIFACTS] Missing ${label}`);
+    }
+  }
+
+  private normalizePage(page: number): number {
+    if (!Number.isFinite(page) || page < 1) return 1;
+    return Math.floor(page);
+  }
+
+  private async commitDoc(
+    ref: DocumentReference,
+    payload: Record<string, any>,
+    options?: { merge?: boolean }
+  ): Promise<void> {
+    const cleaned = clean(payload);
+    if (!cleaned || typeof cleaned !== "object") {
+      throw new Error("[PDF-ARTIFACTS] Invalid payload");
+    }
+    logCommit(ref.path, cleaned);
+    try {
+      if (options) {
+        await setDoc(ref, cleaned as Record<string, any>, options);
+      } else {
+        await setDoc(ref, cleaned as Record<string, any>);
+      }
+    } catch (error) {
+      logCommitError(error, cleaned);
+      throw error;
+    }
+  }
+
   private pageDoc(page: number): DocumentReference {
-    return doc(this.fileDoc, 'pages', String(page));
+    const safePage = this.normalizePage(page);
+    return doc(this.fileDoc, "pages", String(safePage));
   }
 
   private pageCollection(): CollectionReference {
-    return collection(this.fileDoc, 'pages');
+    return collection(this.fileDoc, "pages");
   }
 
-  async saveStroke(page: number, stroke: StrokeInput): Promise<void> {
-    const refNo = await this.nextRefNo();
-    const pageRef = this.pageDoc(page);
+  private async ensurePageDoc(page: number): Promise<DocumentReference> {
+    this.assertWriteContext();
+    const safePage = this.normalizePage(page);
+    const pageRef = this.pageDoc(safePage);
     const snap = await getDoc(pageRef);
     if (!snap.exists()) {
-      await setDoc(pageRef, {
-        pageNumber: page,
+      await this.commitDoc(pageRef, {
+        pageNumber: safePage,
         createdAt: serverTimestamp(),
       });
     }
+    return pageRef;
+  }
 
-    const col = collection(pageRef, 'strokes');
+  async saveStroke(page: number, stroke: StrokeInput): Promise<void> {
+    this.assertWriteContext();
+    const safePage = this.normalizePage(page);
+    const refNo = await this.nextRefNo(); // ✅ fix
+    const pageRef = await this.ensurePageDoc(safePage);
+
+    const col = collection(pageRef, "strokes");
     const sref = doc(col);
-    await setDoc(sref, {
-      type: 'stroke',
+
+    await this.commitDoc(sref, {
+      type: "stroke",
       refNo,
-      page,
+      page: safePage,
       color: colorHexToInt(stroke.color),
       width: stroke.width,
       toolType: stroke.toolType,
@@ -201,14 +343,19 @@ export class PdfArtifactService {
   }
 
   async createNote(page: number, note: PdfNoteInput): Promise<void> {
-    const pageRef = this.pageDoc(page);
-    const col = collection(pageRef, 'annotations');
+    this.assertWriteContext();
+    this.assertNonEmptyId("note.id", note.id);
+    const safePage = this.normalizePage(page);
+    const pageRef = await this.ensurePageDoc(safePage);
+
+    const col = collection(pageRef, "annotations");
     const nref = doc(col, note.id);
-    await setDoc(
+
+    await this.commitDoc(
       nref,
       {
-        type: 'annotation',
-        page,
+        type: "annotation",
+        page: safePage,
         id: note.id,
         annType: note.annType,
         position: { x: note.position.x, y: note.position.y },
@@ -227,14 +374,19 @@ export class PdfArtifactService {
   }
 
   async updateNote(page: number, note: PdfNoteInput): Promise<void> {
-    const pageRef = this.pageDoc(page);
-    const col = collection(pageRef, 'annotations');
+    this.assertWriteContext();
+    this.assertNonEmptyId("note.id", note.id);
+    const safePage = this.normalizePage(page);
+    const pageRef = await this.ensurePageDoc(safePage);
+
+    const col = collection(pageRef, "annotations");
     const nref = doc(col, note.id);
-    await setDoc(
+
+    await this.commitDoc(
       nref,
       {
-        type: 'annotation',
-        page,
+        type: "annotation",
+        page: safePage,
         id: note.id,
         annType: note.annType,
         position: { x: note.position.x, y: note.position.y },
@@ -252,40 +404,69 @@ export class PdfArtifactService {
   }
 
   async deleteNote(page: number, noteId: string): Promise<void> {
-    const pageRef = this.pageDoc(page);
-    const col = collection(pageRef, 'annotations');
-    const nref = doc(col, noteId);
-    await deleteDoc(nref);
+    this.assertWriteContext();
+    this.assertNonEmptyId("noteId", noteId);
+    const safePage = this.normalizePage(page);
+    const pageRef = this.pageDoc(safePage);
+    const col = collection(pageRef, "annotations");
+    await deleteDoc(doc(col, noteId));
     await this.touchUpdatedAt();
   }
 
   async saveCameraPin(page: number, pin: CameraPinInput, remoteImageUrl?: string | null): Promise<void> {
+    this.assertWriteContext();
+    this.assertNonEmptyId("pin.id", pin.id);
+    const safePage = this.normalizePage(page);
     const refNo = await this.nextRefNo();
-    const pageRef = this.pageDoc(page);
-    const col = collection(pageRef, 'pins');
+    const pageRef = await this.ensurePageDoc(safePage);
+
+    const col = collection(pageRef, "pins");
     const pref = doc(col, pin.id);
 
-    await setDoc(pref, {
-      type: 'cameraPin',
+    const rectFromNorm = normalizeRect(
+      isFiniteNumber(pin.normX) && isFiniteNumber(pin.normY) && isFiniteNumber(pin.normW) && isFiniteNumber(pin.normH)
+        ? { x: pin.normX, y: pin.normY, w: pin.normW, h: pin.normH }
+        : null
+    );
+    const safeRect = normalizeRect(pin.rect) ?? rectFromNorm;
+
+    const payload: Record<string, any> = {
+      type: "cameraPin",
       refNo,
-      page,
+      page: safePage,
       pinId: pin.id,
-      position: { x: pin.position.x, y: pin.position.y },
-      imagePath: remoteImageUrl ?? pin.imagePath,
-      note: pin.note || '',
+      position: { x: pin.position.x, y: pin.position.y }, // absolute (compat)
+      imagePath: String(remoteImageUrl ?? pin.imagePath ?? ""),
+      note: typeof pin.note === "string" ? pin.note : pin.note ? String(pin.note) : "",
       author: this.author(),
       createdAt: pin.createdAt,
       updatedAt: serverTimestamp(),
-    });
+    };
+
+      if (safeRect) {
+        payload.rect = safeRect;
+        payload.normX = safeRect.x;
+        payload.normY = safeRect.y;
+        payload.normW = safeRect.w;
+        payload.normH = safeRect.h;
+      } else {
+        if (isFiniteNumber(pin.normX)) payload.normX = clamp01(pin.normX);
+        if (isFiniteNumber(pin.normY)) payload.normY = clamp01(pin.normY);
+        if (isFiniteNumber(pin.normW)) payload.normW = clamp01(pin.normW);
+        if (isFiniteNumber(pin.normH)) payload.normH = clamp01(pin.normH);
+      }
+    await this.commitDoc(pref, payload, { merge: true });
 
     await this.touchUpdatedAt();
   }
 
   async deleteCameraPin(page: number, pinId: string): Promise<void> {
-    const pageRef = this.pageDoc(page);
-    const col = collection(pageRef, 'pins');
-    const pref = doc(col, pinId);
-    await deleteDoc(pref);
+    this.assertWriteContext();
+    this.assertNonEmptyId("pinId", pinId);
+    const safePage = this.normalizePage(page);
+    const pageRef = this.pageDoc(safePage);
+    const col = collection(pageRef, "pins");
+    await deleteDoc(doc(col, pinId));
     await this.touchUpdatedAt();
   }
 
@@ -295,126 +476,104 @@ export class PdfArtifactService {
     const pagesSnap = await getDocs(this.pageCollection());
     if (pagesSnap.empty) return out;
 
-    for (const pageDoc of pagesSnap.docs) {
-      const pageNum = parseInt(pageDoc.id, 10);
+    for (const pageDocSnap of pagesSnap.docs) {
+      const pageNum = parseInt(pageDocSnap.id, 10);
       if (!Number.isFinite(pageNum)) continue;
 
       const items: PageArtifacts = [];
 
+      // strokes
       try {
-        const strokesSnap = await getDocs(collection(pageDoc.ref, 'strokes'));
+        const strokesSnap = await getDocs(collection(pageDocSnap.ref, "strokes"));
         strokesSnap.forEach((s) => {
           const d = s.data() as any;
-          try {
-            const artifact: StrokeArtifact = {
-              type: 'stroke',
-              color: (d.color as number) ?? 0xff000000,
-              width: Number(d.width ?? 1),
-              toolType: Number(d.toolType ?? 0),
-              isEraser: !!d.isEraser,
-              points: Array.isArray(d.points)
-                ? d.points.map((p: any) => ({ x: Number(p.x ?? 0), y: Number(p.y ?? 0) }))
-                : [],
-              pressureValues: Array.isArray(d.pressureValues)
-                ? d.pressureValues.map((v: any) => Number(v ?? 0))
-                : [],
-            };
-            items.push(artifact);
-          } catch {
-            // ignore parse errors
-          }
+          items.push({
+            type: "stroke",
+            color: (d.color as number) ?? 0xff000000,
+            width: Number(d.width ?? 1),
+            toolType: Number(d.toolType ?? 0),
+            isEraser: !!d.isEraser,
+            points: Array.isArray(d.points) ? d.points.map((p: any) => ({ x: Number(p.x ?? 0), y: Number(p.y ?? 0) })) : [],
+            pressureValues: Array.isArray(d.pressureValues) ? d.pressureValues.map((v: any) => Number(v ?? 0)) : [],
+          });
         });
-      } catch {
-        // ignore strokes load errors
-      }
+      } catch {}
 
+      // annotations
       try {
-        const notesSnap = await getDocs(collection(pageDoc.ref, 'annotations'));
+        const notesSnap = await getDocs(collection(pageDocSnap.ref, "annotations"));
         notesSnap.forEach((n) => {
           const d = n.data() as any;
-          try {
-            const artifact: AnnotationArtifact = {
-              type: 'annotation',
-              id: String(d.id || n.id),
-              annType: Number(d.annType ?? 0),
-              position: {
-                x: Number(d.position?.x ?? 0),
-                y: Number(d.position?.y ?? 0),
-              },
-              text: String(d.text ?? ''),
-              color: (d.color as number) ?? 0xff000000,
-              width: Number(d.width ?? 150),
-              height: Number(d.height ?? 100),
-            };
-            items.push(artifact);
-          } catch {
-            // ignore parse errors
-          }
+          items.push({
+            type: "annotation",
+            id: String(d.id || n.id),
+            annType: Number(d.annType ?? 0),
+            position: { x: Number(d.position?.x ?? 0), y: Number(d.position?.y ?? 0) },
+            text: String(d.text ?? ""),
+            color: (d.color as number) ?? 0xff000000,
+            width: Number(d.width ?? 150),
+            height: Number(d.height ?? 100),
+          });
         });
-      } catch {
-        // ignore annotations load errors
-      }
+      } catch {}
 
+      // pins
       try {
-        const pinsSnap = await getDocs(collection(pageDoc.ref, 'pins'));
+        const pinsSnap = await getDocs(collection(pageDocSnap.ref, "pins"));
         pinsSnap.forEach((p) => {
           const d = p.data() as any;
-          try {
-            let createdAt: number;
-            if (d.createdAt && typeof (d.createdAt as any).toDate === 'function') {
-              createdAt = (d.createdAt as any).toDate().getTime();
-            } else if (typeof d.createdAt === 'string') {
-              createdAt = new Date(d.createdAt).getTime();
-            } else if (typeof d.createdAt === 'number') {
-              createdAt = d.createdAt;
-            } else {
-              createdAt = Date.now();
-            }
 
-            const artifact: CameraPinArtifact = {
-              type: 'cameraPin',
-              id: String(d.pinId || p.id),
-              position: {
-                x: Number(d.position?.x ?? 0),
-                y: Number(d.position?.y ?? 0),
-              },
-              imagePath: String(d.imagePath ?? ''),
-              createdAt,
-              note: typeof d.note === 'string' ? d.note : undefined,
-            };
-            items.push(artifact);
-          } catch {
-            // ignore parse errors
-          }
+          let createdAt: number;
+          if (d.createdAt && typeof d.createdAt.toDate === "function") createdAt = d.createdAt.toDate().getTime();
+          else if (typeof d.createdAt === "string") createdAt = new Date(d.createdAt).getTime();
+          else if (typeof d.createdAt === "number") createdAt = d.createdAt;
+          else createdAt = Date.now();
+
+          items.push({
+            type: "cameraPin",
+            id: String(d.pinId || p.id),
+            position: { x: Number(d.position?.x ?? 0), y: Number(d.position?.y ?? 0) },
+            imagePath: String(d.imagePath ?? ""),
+            createdAt,
+            note: typeof d.note === "string" ? d.note : undefined,
+            rect: d.rect && typeof d.rect === "object" ? d.rect : undefined,
+            normX: typeof d.normX === "number" ? d.normX : undefined,
+            normY: typeof d.normY === "number" ? d.normY : undefined,
+            normW: typeof d.normW === "number" ? d.normW : undefined,
+            normH: typeof d.normH === "number" ? d.normH : undefined,
+          });
         });
-      } catch {
-        // ignore pins load errors
-      }
+      } catch {}
 
-      if (items.length) {
-        out[String(pageNum)] = items;
-      }
+      if (items.length) out[String(pageNum)] = items;
     }
 
     return out;
   }
 
   async uploadCameraImage(page: number, pinId: string, file: File): Promise<string> {
-    const basePath = this.projectId && this.projectId.length
-      ? `projects/${this.projectId}/files/${this.fileId}`
-      : `files/${this.fileId}`;
-    const path = `${basePath}/pins/${page}/${pinId}.jpg`;
+    this.assertWriteContext();
+    this.assertNonEmptyId("pinId", pinId);
+    const safePage = this.normalizePage(page);
+    const basePath =
+      this.projectId && this.projectId.length
+        ? `projects/${this.projectId}/files/${this.fileId}`
+        : `files/${this.fileId}`;
+
+    const ext = file.type === "image/png" ? "png" : "jpg";
+    const path = `${basePath}/pins/${safePage}/${pinId}.${ext}`;
 
     const sref = storageRef(storage, path);
-    await uploadBytes(sref, file, { contentType: 'image/jpeg' });
+    await uploadBytes(sref, file, { contentType: file.type || "image/jpeg" });
     return getDownloadURL(sref);
   }
 
   private async ensureFileMeta(): Promise<void> {
+    this.assertWriteContext();
     try {
       const fileSnap = await getDoc(this.fileDoc);
       if (!fileSnap.exists()) {
-        await setDoc(this.fileDoc, {
+        await this.commitDoc(this.fileDoc, {
           fileUrl: this.fileUrl,
           fileName: this.fileName,
           projectId: this.projectId ?? null,
@@ -423,55 +582,76 @@ export class PdfArtifactService {
         });
       }
 
-      const metaDoc = doc(this.fileDoc, 'meta', 'meta');
+      const metaDoc = doc(this.fileDoc, "meta", "meta");
       const metaSnap = await getDoc(metaDoc);
       if (!metaSnap.exists()) {
-        await setDoc(metaDoc, {
+        await this.commitDoc(metaDoc, {
           fileUrl: this.fileUrl,
           fileName: this.fileName,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
       }
-    } catch {
-      // swallow meta errors
-    }
+    } catch {}
   }
 
   private async touchUpdatedAt(): Promise<void> {
-    const metaDoc = doc(this.fileDoc, 'meta', 'meta');
-    await setDoc(metaDoc, { updatedAt: serverTimestamp() }, { merge: true });
+    this.assertWriteContext();
+    const metaDoc = doc(this.fileDoc, "meta", "meta");
+    await this.commitDoc(metaDoc, { updatedAt: serverTimestamp() }, { merge: true });
   }
 
   private author(): { uid: string; name?: string | null; email?: string | null } {
     const u = auth.currentUser;
-    return {
-      uid: u?.uid ?? 'anonymous',
-      name: u?.displayName ?? null,
-      email: u?.email ?? null,
-    };
+    return { uid: u?.uid ?? "anonymous", name: u?.displayName ?? null, email: u?.email ?? null };
   }
 
   private async nextRefNo(): Promise<number> {
-    const counters = doc(this.fileDoc, '_meta', 'counters');
-    const next = await runTransaction(db, async (tx) => {
-      const snap = await tx.get(counters);
-      const current = typeof snap.data()?.lastRef === 'number'
-        ? (snap.data()!.lastRef as number)
-        : 0;
-      const updated = current + 1;
-      tx.set(counters, { lastRef: updated }, { merge: true });
-      return updated;
-    });
-    return next;
+    this.assertWriteContext();
+    const counters = doc(this.fileDoc, "_meta", "counters");
+    const pathKey = counters.path;
+    const prev = INFLIGHT_COUNTERS.get(pathKey) ?? Promise.resolve(0);
+
+    const task = prev
+      .catch(() => undefined)
+      .then(() =>
+        runTransaction(db, async (tx) => {
+          const snap = await tx.get(counters);
+          const current =
+            typeof snap.data()?.lastRef === "number"
+              ? (snap.data()!.lastRef as number)
+              : 0;
+          const updated = current + 1;
+          if (!Number.isFinite(updated)) {
+            throw new Error("[PDF-ARTIFACTS] Invalid ref counter");
+          }
+
+          if (isDebugEnabled()) {
+            console.log("[PDF-ARTIFACTS] nextRefNo commit", {
+              path: counters.path,
+              payload: { lastRef: updated },
+            });
+          }
+
+          tx.set(counters, { lastRef: updated }, { merge: true });
+          return updated;
+        })
+      );
+
+    INFLIGHT_COUNTERS.set(pathKey, task);
+
+    try {
+      return await task;
+    } finally {
+      if (INFLIGHT_COUNTERS.get(pathKey) === task) {
+        INFLIGHT_COUNTERS.delete(pathKey);
+      }
+    }
   }
 
   private computeStrokeBBox(points: DocPoint[]) {
     if (!points.length) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-    let minX = points[0].x;
-    let maxX = points[0].x;
-    let minY = points[0].y;
-    let maxY = points[0].y;
+    let minX = points[0].x, maxX = points[0].x, minY = points[0].y, maxY = points[0].y;
     for (const p of points) {
       if (p.x < minX) minX = p.x;
       if (p.x > maxX) maxX = p.x;

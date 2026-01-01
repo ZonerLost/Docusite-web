@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Button from '@/components/ui/Button';
 import Textarea from '@/components/ui/Textarea';
 import { XIcon, PlusIcon, TrashIcon } from 'lucide-react';
@@ -35,6 +36,7 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({ i
   const plusBtnRef = useRef<HTMLButtonElement>(null);
   const [choiceOpen, setChoiceOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
   const previewUrls = usePreviewUrls(pictures);
 
   // Camera state
@@ -237,6 +239,10 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({ i
   };
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
     if (!isOpen) {
       stopStream();
       revokeCaptured();
@@ -248,11 +254,11 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({ i
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="relative bg-white rounded-lg p-6 w-full max-w-sm mx-4">
+  const modalContent = (
+    <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black bg-opacity-50">
+      <div className="relative z-[9999] bg-white rounded-lg p-6 w-full max-w-sm mx-4">
         <div className="flex items-center justify-between mb-4">
           {selectedIndices.size === 0 ? (
             <>
@@ -419,6 +425,8 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({ i
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };
 
 export default AddPicturesWithNotesModal;

@@ -109,7 +109,7 @@ const Sidebar: React.FC<SidebarProps> = React.memo(({ isCollapsed = false, onTog
         {/* Header */}
         <div className="flex items-center justify-between py-4 border-b border-border-gray">
           <div className="w-28 h-8">
-            <Image src="/docusite.svg" alt="Docusite" width={32} height={32} className="w-full h-full" />
+            <Image src="/docusite.svg" alt="Docusite" width={32} height={32} className="w-full h-auto" />
           </div>
           <div className="flex items-center space-x-2">
             {/* Mobile Close Button */}

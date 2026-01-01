@@ -30,6 +30,10 @@ service cloud.firestore {
       allow read, create: if isAuthenticated();
       allow update, delete: if isAuthenticated();
     }
+    // Client photo metadata for project files
+    match /projectFilePhotos/{photoId} {
+      allow read, write: if isAuthenticated();
+    }
 
     // Notifications: email key is stored in lowercase; allow case-insensitive access for the owner
     match /notifications/{emailDoc} {
