@@ -58,7 +58,9 @@ const Avatar: React.FC<AvatarProps> = ({
     return base.charAt(0).toUpperCase();
   };
 
-  const isValidSrc = !!normalizedSrc && !loadError;
+  const isHttpSrc = /^https?:\/\//i.test(normalizedSrc);
+  const isLocalSrc = normalizedSrc.startsWith('/');
+  const isValidSrc = (isHttpSrc || isLocalSrc) && !loadError;
 
   const sizeClasses = getSizeClasses();
 
@@ -76,6 +78,7 @@ const Avatar: React.FC<AvatarProps> = ({
           height={size === 'xs' ? 24 : size === 'sm' ? 32 : size === 'md' ? 40 : size === 'lg' ? 48 : 64}
           className="w-full h-full object-cover"
           onError={() => setLoadError(true)}
+          unoptimized={isHttpSrc}
         />
       ) : showInitials ? (
         <span className="font-bold text-action">

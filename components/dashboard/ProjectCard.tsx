@@ -61,7 +61,10 @@ const ProjectCard: React.FC<ProjectCardProps> = React.memo(({ project, onClick }
       {/* Team avatars - overlapping */}
       <div className="flex items-center mb-3">
         {project.team.map((avatar, index) => {
-          const isUrl = typeof avatar === 'string' && (/^https?:\/\//i.test(avatar) || avatar.startsWith('/') || avatar.startsWith('gs://'));
+          const rawSrc = typeof avatar === 'string' ? avatar.trim() : '';
+          const isRemote = /^https?:\/\//i.test(rawSrc);
+          const isLocal = rawSrc.startsWith('/');
+          const isUrl = !!rawSrc && (isRemote || isLocal);
           return (
             <div 
               key={index} 
@@ -70,11 +73,12 @@ const ProjectCard: React.FC<ProjectCardProps> = React.memo(({ project, onClick }
             >
               {isUrl ? (
                 <Image
-                  src={avatar}
+                  src={rawSrc}
                   alt={`Team member ${index + 1}`}
                   width={32}
                   height={32}
                   className="w-6 h-6 sm:w-8 sm:h-8 rounded-full object-cover"
+                  unoptimized={isRemote}
                 />
               ) : (
                 <span className="w-6 h-6 sm:w-8 sm:h-8 flex items-center justify-center font-bold text-action uppercase">{(avatar || ' ').toString().trim().charAt(0) || ' '}</span>
