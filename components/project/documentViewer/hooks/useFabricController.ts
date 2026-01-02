@@ -84,7 +84,7 @@ export function useFabricController(opts: {
         if (cancelled) return;
         c.on("mouse:down", (ev) => {
           const p = (c.getPointer?.(ev.e) as { x: number; y: number } | undefined) ?? { x: 0, y: 0 };
-          const t = new fabric.IText("Typeƒ?İ", {
+          const t = new fabric.IText("Type…", {
             left: p.x,
             top: p.y,
             fontSize: 16,
