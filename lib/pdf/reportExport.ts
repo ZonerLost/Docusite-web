@@ -1,25 +1,16 @@
-"use client";
-
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import type { ProjectFilePhoto } from "@/components/project/documentViewer/types";
+import type { PDFImage } from "pdf-lib";
+import type { ExportedImage, PhotoMarkerExport, ReportProjectMeta } from "@/types/report";
 
-export type ExportedImage = { width: number; height: number; dataUrl: string };
-
-export type ReportProjectMeta = {
-  id: string;
-  name?: string;
-  clientName?: string;
-  projectOwner?: string;
-  ownerName?: string;
-  ownerEmail?: string;
-  description?: string;
-  conclusion?: string;
-};
+export type { ExportedImage, PhotoMarkerExport, ReportProjectMeta } from "@/types/report";
 
 const DEFAULT_PAGE = { width: 612, height: 792 }; // Letter
 const PAGE_MARGIN = 60;
 const BODY_SIZE = 11;
 const LINE_HEIGHT = 16;
+const PHOTO_MAX_HEIGHT = 280;
+const PHOTO_MIN_HEIGHT = 160;
+const PHOTO_GAP = 20;
 
 function safeText(value: unknown, fallback = ""): string {
   const str = typeof value === "string" ? value.trim() : "";
@@ -34,7 +25,17 @@ function formatDateLong(date: Date): string {
   });
 }
 
-function formatDateShort(ms?: number): string {
+function toMillis(value?: string | number): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const ms = Date.parse(value);
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  return 0;
+}
+
+function formatDateShort(value?: string | number): string {
+  const ms = toMillis(value);
   if (!ms) return "N/A";
   try {
     return new Date(ms).toLocaleDateString("en-US");
@@ -78,12 +79,22 @@ function decodeDataUrl(dataUrl: string): { bytes: Uint8Array; mime: string } {
     return { bytes: new Uint8Array(), mime: "application/octet-stream" };
   }
   const [, mime, base64] = match;
-  const binary = typeof atob === "function" ? atob(base64) : "";
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
+
+  if (typeof Buffer !== "undefined") {
+    const buf = Buffer.from(base64, "base64");
+    return { bytes: new Uint8Array(buf), mime };
   }
-  return { bytes, mime };
+
+  if (typeof atob === "function") {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return { bytes, mime };
+  }
+
+  return { bytes: new Uint8Array(), mime };
 }
 
 function drawCentered(
@@ -222,20 +233,88 @@ async function addAnnotatedPages(doc: PDFDocument, pages: ExportedImage[]) {
   }
 }
 
+type PhotoEntry = {
+  id: string;
+  refNo: string;
+  page: number;
+  createdAt?: string | number;
+  note?: string;
+  imageUrl?: string;
+};
+
+function flattenPhotoMarkers(markers: PhotoMarkerExport[]): PhotoEntry[] {
+  const entries: PhotoEntry[] = [];
+  markers.forEach((marker) => {
+    const refNo = safeText(marker.refNo, marker.id);
+    const page = Number.isFinite(marker.page) ? marker.page : 1;
+    const createdAt = marker.createdAt;
+    const note = marker.note;
+    const urls = Array.isArray(marker.imageUrls) ? marker.imageUrls : [];
+
+    if (urls.length) {
+      urls.forEach((url) => {
+        entries.push({
+          id: marker.id,
+          refNo,
+          page,
+          createdAt,
+          note,
+          imageUrl: url,
+        });
+      });
+    } else {
+      entries.push({ id: marker.id, refNo, page, createdAt, note });
+    }
+  });
+
+  entries.sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt));
+  return entries;
+}
+
+function drawCameraIcon(page: any, x: number, y: number, size: number) {
+  const bodyHeight = size * 0.6;
+  const bodyColor = rgb(0.85, 0.86, 0.9);
+  const lineColor = rgb(0.35, 0.35, 0.4);
+
+  page.drawRectangle({
+    x,
+    y,
+    width: size,
+    height: bodyHeight,
+    color: bodyColor,
+    borderColor: lineColor,
+    borderWidth: 0.5,
+  });
+  page.drawRectangle({
+    x: x + size * 0.15,
+    y: y + bodyHeight,
+    width: size * 0.35,
+    height: size * 0.18,
+    color: lineColor,
+  });
+  page.drawCircle({
+    x: x + size * 0.55,
+    y: y + bodyHeight * 0.5,
+    size: size * 0.18,
+    color: lineColor,
+  });
+}
+
+type PhotoIndexContext = { page: any; yTop: number };
+
 function addPhotoIndex(
   doc: PDFDocument,
-  photos: ProjectFilePhoto[],
+  entries: PhotoEntry[],
   pageSize: { width: number; height: number },
   font: any,
   fontBold: any
-) {
+): PhotoIndexContext {
   const maxWidth = pageSize.width - PAGE_MARGIN * 2;
   const headerHeight = 22;
   const rowHeight = 18;
-  const colDescription = Math.round(maxWidth * 0.7);
-  const colRef = maxWidth - colDescription;
-
-  const sorted = [...photos].sort((a, b) => (a.createdAtMs || 0) - (b.createdAtMs || 0));
+  const colIcon = 28;
+  const colRef = 120;
+  const colDescription = Math.max(120, maxWidth - colIcon - colRef);
 
   let page = doc.addPage([pageSize.width, pageSize.height]);
   let yTop = PAGE_MARGIN;
@@ -261,15 +340,22 @@ function addPhotoIndex(
       height: headerHeight,
       color: rgb(0.12, 0.22, 0.55),
     });
-    page.drawText("Image Description", {
+    page.drawText("Image", {
       x: PAGE_MARGIN + 6,
       y: pageSize.height - yTop - 16,
       size: 10,
       font: fontBold,
       color: rgb(1, 1, 1),
     });
+    page.drawText("Description", {
+      x: PAGE_MARGIN + colIcon + 6,
+      y: pageSize.height - yTop - 16,
+      size: 10,
+      font: fontBold,
+      color: rgb(1, 1, 1),
+    });
     page.drawText("Ref No", {
-      x: PAGE_MARGIN + colDescription + 6,
+      x: PAGE_MARGIN + colIcon + colDescription + 6,
       y: pageSize.height - yTop - 16,
       size: 10,
       font: fontBold,
@@ -280,7 +366,7 @@ function addPhotoIndex(
 
   drawTableHeader();
 
-  if (!sorted.length) {
+  if (!entries.length) {
     page.drawText("No photos uploaded.", {
       x: PAGE_MARGIN,
       y: pageSize.height - yTop - BODY_SIZE,
@@ -291,7 +377,7 @@ function addPhotoIndex(
     yTop += LINE_HEIGHT;
   }
 
-  for (const photo of sorted) {
+  for (const entry of entries) {
     if (yTop + rowHeight > pageSize.height - PAGE_MARGIN) {
       page = doc.addPage([pageSize.width, pageSize.height]);
       yTop = PAGE_MARGIN;
@@ -299,11 +385,8 @@ function addPhotoIndex(
       drawTableHeader();
     }
 
-    const descriptionRaw = safeText(
-      photo.description,
-      `Page ${photo.page || "?"} - ${formatDateShort(photo.createdAtMs)}`
-    );
-    const refRaw = safeText(photo.refNo || photo.id, "N/A");
+    const descriptionRaw = `Page ${entry.page || "?"} - ${formatDateShort(entry.createdAt)}`;
+    const refRaw = safeText(entry.refNo, "N/A");
     const description = truncateText(descriptionRaw, font, BODY_SIZE, colDescription - 12);
     const ref = truncateText(refRaw, font, BODY_SIZE, colRef - 12);
 
@@ -317,15 +400,19 @@ function addPhotoIndex(
       color: rgb(1, 1, 1),
     });
 
+    const iconSize = 10;
+    const iconY = pageSize.height - yTop - rowHeight + (rowHeight - iconSize) / 2;
+    drawCameraIcon(page, PAGE_MARGIN + 8, iconY, iconSize);
+
     page.drawText(description, {
-      x: PAGE_MARGIN + 6,
+      x: PAGE_MARGIN + colIcon + 6,
       y: pageSize.height - yTop - BODY_SIZE,
       size: BODY_SIZE,
       font,
       color: rgb(0.2, 0.2, 0.2),
     });
     page.drawText(ref, {
-      x: PAGE_MARGIN + colDescription + 6,
+      x: PAGE_MARGIN + colIcon + colDescription + 6,
       y: pageSize.height - yTop - BODY_SIZE,
       size: BODY_SIZE,
       font,
@@ -351,23 +438,154 @@ function addPhotoIndex(
   });
   yTop += 24;
 
-  for (const photo of sorted) {
-    if (yTop + LINE_HEIGHT > pageSize.height - PAGE_MARGIN) {
-      page = doc.addPage([pageSize.width, pageSize.height]);
-      yTop = PAGE_MARGIN;
+  return { page, yTop };
+}
+
+async function fetchImageBytes(url: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  if (!url) return null;
+  if (url.startsWith("data:")) {
+    const decoded = decodeDataUrl(url);
+    return decoded.bytes.length ? decoded : null;
+  }
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const arrayBuffer = await res.arrayBuffer();
+    const mime = res.headers.get("content-type") || "";
+    return { bytes: new Uint8Array(arrayBuffer), mime };
+  } catch {
+    return null;
+  }
+}
+
+function fitContain(containerW: number, containerH: number, imageW: number, imageH: number) {
+  const scale = Math.min(containerW / imageW, containerH / imageH, 1);
+  return { width: imageW * scale, height: imageH * scale };
+}
+
+async function addPhotoGallery(
+  doc: PDFDocument,
+  entries: PhotoEntry[],
+  pageSize: { width: number; height: number },
+  font: any,
+  fontBold: any,
+  startCtx: PhotoIndexContext
+) {
+  let page = startCtx.page;
+  let yTop = startCtx.yTop;
+
+  const maxWidth = pageSize.width - PAGE_MARGIN * 2;
+  const headerGap = 8;
+
+  const imageCache = new Map<string, { bytes: Uint8Array; mime: string } | null>();
+  const embedCache = new Map<string, PDFImage | null>();
+
+  const drawHeading = (title: string) => {
+    page.drawText(title, {
+      x: PAGE_MARGIN,
+      y: pageSize.height - yTop - 16,
+      size: 16,
+      font: fontBold,
+      color: rgb(0.12, 0.2, 0.55),
+    });
+    yTop += 24;
+  };
+
+  const startNewPage = (title: string) => {
+    page = doc.addPage([pageSize.width, pageSize.height]);
+    yTop = PAGE_MARGIN;
+    drawHeading(title);
+  };
+
+  if (!entries.length) {
+    page.drawText("No photos available.", {
+      x: PAGE_MARGIN,
+      y: pageSize.height - yTop - BODY_SIZE,
+      size: BODY_SIZE,
+      font,
+      color: rgb(0.4, 0.4, 0.4),
+    });
+    return;
+  }
+
+  for (const entry of entries) {
+    const headerRaw = `${safeText(entry.refNo, "N/A")} | Page ${entry.page || "?"} | ${formatDateShort(entry.createdAt)}`;
+    const header = truncateText(headerRaw, font, BODY_SIZE, maxWidth);
+    const headerHeight = LINE_HEIGHT;
+
+    const availableHeight = pageSize.height - PAGE_MARGIN - yTop - headerHeight - headerGap;
+    if (availableHeight < PHOTO_MIN_HEIGHT) {
+      startNewPage("Photos (cont.)");
     }
-    const lineRaw = `${safeText(photo.refNo || photo.id, "N/A")} | Page ${
-      photo.page || "?"
-    } | ${formatDateShort(photo.createdAtMs)}`;
-    const line = truncateText(lineRaw, font, BODY_SIZE, maxWidth);
-    page.drawText(line, {
+
+    page.drawText(header, {
       x: PAGE_MARGIN,
       y: pageSize.height - yTop - BODY_SIZE,
       size: BODY_SIZE,
       font,
       color: rgb(0.2, 0.2, 0.2),
     });
-    yTop += LINE_HEIGHT;
+    yTop += headerHeight + headerGap;
+
+    const maxImageHeight = Math.min(
+      PHOTO_MAX_HEIGHT,
+      pageSize.height - PAGE_MARGIN - yTop
+    );
+
+    let image: PDFImage | null = null;
+    if (entry.imageUrl) {
+      if (embedCache.has(entry.imageUrl)) {
+        image = embedCache.get(entry.imageUrl) || null;
+      } else {
+        let payload = imageCache.get(entry.imageUrl);
+        if (!payload) {
+          payload = await fetchImageBytes(entry.imageUrl);
+          imageCache.set(entry.imageUrl, payload);
+        }
+
+        if (payload?.bytes?.length) {
+          const mime = payload.mime.toLowerCase();
+          try {
+            image = mime.includes("jpeg") || mime.includes("jpg")
+              ? await doc.embedJpg(payload.bytes)
+              : await doc.embedPng(payload.bytes);
+          } catch {
+            try {
+              image = await doc.embedPng(payload.bytes);
+            } catch {
+              image = null;
+            }
+          }
+        }
+
+        embedCache.set(entry.imageUrl, image);
+      }
+    }
+
+    if (!image) {
+      page.drawText("Image unavailable.", {
+        x: PAGE_MARGIN,
+        y: pageSize.height - yTop - BODY_SIZE,
+        size: BODY_SIZE,
+        font,
+        color: rgb(0.45, 0.45, 0.45),
+      });
+      yTop += LINE_HEIGHT + PHOTO_GAP;
+      continue;
+    }
+
+    const resolvedImage: PDFImage = image;
+    const { width, height } = fitContain(
+      maxWidth,
+      maxImageHeight,
+      resolvedImage.width,
+      resolvedImage.height
+    );
+    const x = PAGE_MARGIN + (maxWidth - width) / 2;
+    const y = pageSize.height - yTop - height;
+    page.drawImage(resolvedImage, { x, y, width, height });
+    yTop += height + PHOTO_GAP;
   }
 }
 
@@ -375,9 +593,9 @@ export async function buildReportPdf(args: {
   project: ReportProjectMeta;
   fileName?: string | null;
   pages: ExportedImage[];
-  photos: ProjectFilePhoto[];
+  photoMarkers: PhotoMarkerExport[];
 }): Promise<Uint8Array> {
-  const { project, pages, photos } = args;
+  const { project, pages, photoMarkers } = args;
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -389,8 +607,9 @@ export async function buildReportPdf(args: {
   // Append the annotated PDF pages rendered in the browser (annotations flattened into images).
   await addAnnotatedPages(doc, pages);
 
-  // Photo index is appended at the end to mirror the mobile export flow.
-  addPhotoIndex(doc, photos, DEFAULT_PAGE, font, fontBold);
+  const photoEntries = flattenPhotoMarkers(photoMarkers);
+  const indexCtx = addPhotoIndex(doc, photoEntries, DEFAULT_PAGE, font, fontBold);
+  await addPhotoGallery(doc, photoEntries, DEFAULT_PAGE, font, fontBold, indexCtx);
 
   return await doc.save();
 }

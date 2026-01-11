@@ -8,16 +8,12 @@ import admin, {
   getStorageBucketName,
 } from "@/lib/server/firebaseAdmin";
 import { getUserFromToken } from "@/lib/server/auth";
+import { buildReportPdf } from "@/lib/pdf/reportExport";
+import type { ExportProjectReportPayload, ReportProjectMeta } from "@/types/report";
 
 let didLogBucket = false;
 
-type ExportRequestBody = {
-  projectId?: string;
-  pdfId?: string;
-  fileName?: string;
-  fileUrl?: string;
-  pdfBase64?: string;
-};
+type ExportRequestBody = Partial<ExportProjectReportPayload>;
 
 function stripQuery(url: string) {
   return url.split("?")[0].split("#")[0];
@@ -97,16 +93,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const projectId = body.projectId?.trim();
   const fileName = body.fileName?.trim() || "Project Report";
   const fileUrl = body.fileUrl?.trim() || "";
-  const pdfBase64 = body.pdfBase64 || "";
   const pdfId = body.pdfId?.trim() || "";
+  const drawingPages = Array.isArray(body.drawingPages) ? body.drawingPages : [];
+  const photoMarkers = Array.isArray(body.photoMarkers) ? body.photoMarkers : [];
+  const projectMeta = body.project;
 
-  if (!projectId || !pdfBase64) {
+  if (!projectId || !projectMeta || drawingPages.length === 0) {
     return res.status(400).json({ error: "Missing required export parameters" });
   }
 
   console.log("[export] projectId:", projectId);
 
-  const buffer = Buffer.from(pdfBase64, "base64");
+  const resolvedProject: ReportProjectMeta = {
+    ...projectMeta,
+    id: projectMeta.id || projectId,
+  };
+
+  let pdfBytes: Uint8Array;
+  try {
+    pdfBytes = await buildReportPdf({
+      project: resolvedProject,
+      fileName,
+      pages: drawingPages,
+      photoMarkers,
+    });
+  } catch (err: any) {
+    console.error("Report export generation failed:", err);
+    return res.status(500).json({ error: err?.message || "Failed to generate report" });
+  }
+
+  const buffer = Buffer.from(pdfBytes);
   if (!buffer.length) {
     return res.status(400).json({ error: "Empty PDF payload" });
   }
@@ -169,7 +185,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: "50mb",
+      sizeLimit: "120mb",
     },
   },
 };

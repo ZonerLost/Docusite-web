@@ -23,6 +23,7 @@ import type {
   ProjectFilePhoto,
   ReportAnnotation,
   ImageAnnotation,
+  PhotoMarkerMode,
 } from "./types";
 import { usePdfOverlayMetrics } from "./hooks/usePdfOverlayMetrics";
 import { useAnnotationHistory } from "./hooks/useAnnotationHistory";
@@ -247,14 +248,14 @@ const DocumentViewer = React.memo(
         const useLast = last && overlay.pageRects[last.pageIdx];
         const pageIdx = useLast ? last.pageIdx : fallbackPageIdx;
 
-        const baseX = useLast ? last!.normX : 0.1;
-        const baseY = useLast ? last!.normY : 0.1;
-
         const normW = DEFAULT_IMAGE_NORM_WIDTH;
         const normH = DEFAULT_IMAGE_NORM_HEIGHT;
 
-        let normX = baseX + index * IMAGE_STAGGER_STEP;
-        let normY = baseY + index * IMAGE_STAGGER_STEP;
+        const baseX = useLast ? last!.normX : 0.5;
+        const baseY = useLast ? last!.normY : 0.5;
+
+        let normX = baseX - normW / 2 + index * IMAGE_STAGGER_STEP;
+        let normY = baseY - normH / 2 + index * IMAGE_STAGGER_STEP;
 
         normX = Math.min(IMAGE_MAX_START, Math.max(0, normX));
         normY = Math.min(IMAGE_MAX_START, Math.max(0, normY));
@@ -318,6 +319,7 @@ const DocumentViewer = React.memo(
           description: trimmed,
           noteRelX: 0.5,
           noteRelY: 0.5,
+          displayMode: "icon",
           rect: {
             x: placement.normX,
             y: placement.normY,
@@ -572,9 +574,13 @@ const DocumentViewer = React.memo(
               ? { x: img.normX!, y: img.normY!, w: img.normW!, h: img.normH! }
               : undefined;
 
+            const mode: PhotoMarkerMode =
+              img.displayMode === "expanded" ? "expanded" : "icon";
+
             return {
               ...img,
               images,
+              displayMode: mode,
               ...(rect ? { rect } : {}),
             };
           }),
@@ -590,6 +596,106 @@ const DocumentViewer = React.memo(
       if (!previewImageAnnId) return null;
       return imageAnnotations.find((a) => a.id === previewImageAnnId) || null;
     }, [imageAnnotations, previewImageAnnId]);
+
+    const setImageDisplayMode = React.useCallback(
+      (id: string, mode: "icon" | "expanded") => {
+        const current = history.annotationsRef.current;
+        const next = current.map((ann) => {
+          if (ann.type !== "image" || ann.id !== id) return ann;
+          if (mode !== "expanded") {
+            return {
+              ...ann,
+              displayMode: mode,
+              updatedAt: Date.now(),
+            };
+          }
+
+          const normW =
+            typeof ann.normW === "number"
+              ? ann.normW
+              : ann.rect?.w ?? DEFAULT_IMAGE_NORM_WIDTH;
+          const normH =
+            typeof ann.normH === "number"
+              ? ann.normH
+              : ann.rect?.h ?? DEFAULT_IMAGE_NORM_HEIGHT;
+          const rawX =
+            typeof ann.normX === "number"
+              ? ann.normX
+              : ann.rect?.x ?? 0;
+          const rawY =
+            typeof ann.normY === "number"
+              ? ann.normY
+              : ann.rect?.y ?? 0;
+
+          const clampedX = Math.max(0, Math.min(1 - normW, rawX));
+          const clampedY = Math.max(0, Math.min(1 - normH, rawY));
+
+          const pageIdx = (ann.page || 1) - 1;
+          const pageRect = overlay.pageRects[pageIdx];
+          const pageLeftPdf =
+            pageRect?.left !== undefined
+              ? pageRect.left - overlay.pdfContentOffset.left + overlay.pdfScroll.left
+              : undefined;
+          const pageTopPdf =
+            pageRect?.top !== undefined
+              ? pageRect.top - overlay.pdfContentOffset.top + overlay.pdfScroll.top
+              : undefined;
+
+          const absX =
+            pageRect && pageLeftPdf !== undefined
+              ? pageLeftPdf + clampedX * pageRect.width
+              : ann.x;
+          const absY =
+            pageRect && pageTopPdf !== undefined
+              ? pageTopPdf + clampedY * pageRect.height
+              : ann.y;
+
+          const width =
+            pageRect && pageRect.width
+              ? pageRect.width * normW
+              : ann.width;
+          const height =
+            pageRect && pageRect.height
+              ? pageRect.height * normH
+              : ann.height;
+
+          return {
+            ...ann,
+            displayMode: mode,
+            normX: clampedX,
+            normY: clampedY,
+            normW,
+            normH,
+            rect: { x: clampedX, y: clampedY, w: normW, h: normH },
+            x: absX,
+            y: absY,
+            width,
+            height,
+            updatedAt: Date.now(),
+          };
+        });
+        history.apply(next, true);
+        const updated = next.find(
+          (a) => a.type === "image" && a.id === id
+        ) as ImageAnnotation | undefined;
+        if (updated) controller.persistImageAnnotation(updated);
+      },
+      [
+        history,
+        controller,
+        overlay.pageRects,
+        overlay.pdfContentOffset,
+        overlay.pdfScroll,
+      ]
+    );
+
+    const openPreviewForId = React.useCallback(
+      (id: string) => {
+        setActiveImageAnnIdSafe(id);
+        setPreviewImageAnnId(id);
+      },
+      [setActiveImageAnnIdSafe]
+    );
 
     // Merge remote photo metadata into image annotations (for persistence across reloads)
     React.useEffect(() => {
@@ -819,7 +925,7 @@ const DocumentViewer = React.memo(
                 true
               );
               created.forEach((ann) => controller.persistImageAnnotation(ann));
-              setActiveImageAnnIdSafe(created[created.length - 1].id);
+              openPreviewForId(created[created.length - 1].id);
             }
 
             const ok = created.length;
@@ -1078,15 +1184,6 @@ const DocumentViewer = React.memo(
             data-no-export="1"
           >
             <div className="relative w-full max-w-3xl rounded-lg bg-white p-4 shadow-xl">
-              <button
-                type="button"
-                className="absolute right-3 top-3 text-gray-500 hover:text-black"
-                onClick={() => setPreviewImageAnnId(null)}
-                aria-label="Close preview"
-              >
-                X
-              </button>
-
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -1107,6 +1204,25 @@ const DocumentViewer = React.memo(
                       onClick={() => setPreviewImageAnnId(null)}
                     >
                       Close
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded border border-action px-3 py-1 text-xs text-action hover:bg-action/10"
+                      onClick={() => {
+                        const nextMode =
+                          previewImage.displayMode === "expanded"
+                            ? "icon"
+                            : "expanded";
+                        setImageDisplayMode(previewImage.id, nextMode);
+                        setActiveImageAnnIdSafe(previewImage.id);
+                        if (nextMode === "expanded") {
+                          setPreviewImageAnnId(null);
+                        }
+                      }}
+                    >
+                      {previewImage.displayMode === "expanded"
+                        ? "Collapse on page"
+                        : "Show on page"}
                     </button>
                     <button
                       type="button"
@@ -1332,7 +1448,7 @@ const DocumentViewer = React.memo(
                   created.forEach((ann) =>
                     controller.persistImageAnnotation(ann)
                   );
-                  setActiveImageAnnIdSafe(created[created.length - 1].id);
+                  openPreviewForId(created[created.length - 1].id);
                 }
 
                 const ok = created.length;

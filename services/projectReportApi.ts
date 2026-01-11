@@ -1,12 +1,6 @@
 "use client";
 
-export type ExportProjectReportPayload = {
-  projectId: string;
-  pdfId: string;
-  fileName: string;
-  fileUrl: string;
-  pdfBase64: string;
-};
+import type { ExportProjectReportPayload } from "@/types/report";
 
 export async function exportProjectReport(
   payload: ExportProjectReportPayload,

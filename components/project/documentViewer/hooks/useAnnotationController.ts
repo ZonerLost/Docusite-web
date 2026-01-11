@@ -1270,6 +1270,9 @@ export function useAnnotationController(args: {
         createdAt: new Date(),
         note: ann.description || ann.content || "",
       };
+      if (ann.displayMode === "expanded" || ann.displayMode === "icon") {
+        input.displayMode = ann.displayMode;
+      }
 
       if (typeof normX === "number") input.normX = normX;
       if (typeof normY === "number") input.normY = normY;
@@ -1339,6 +1342,7 @@ export function useAnnotationController(args: {
         normY,
         normW,
         normH,
+        displayMode: "icon",
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
@@ -1398,6 +1402,7 @@ export function useAnnotationController(args: {
           normY: baseNormY,
           normW: baseNormW,
           normH: baseNormH,
+          displayMode: "icon",
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
@@ -1473,6 +1478,7 @@ export function useAnnotationController(args: {
           normY,
           normW,
           normH,
+          displayMode: "icon",
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
@@ -1610,17 +1616,20 @@ export function useAnnotationController(args: {
           e.clientY
         );
 
-        const markerSizePx = 28;
-        const normW = markerSizePx / Math.max(1, pr.width);
-        const normH = markerSizePx / Math.max(1, pr.height);
+        const markerSizePx = 32;
+        const iconNormW = markerSizePx / Math.max(1, pr.width);
+        const iconNormH = markerSizePx / Math.max(1, pr.height);
+
+        const normW = 0.25;
+        const normH = 0.2;
 
         const clampedX = Math.max(
           0,
-          Math.min(1 - normW, normalized.x - normW / 2)
+          Math.min(1 - iconNormW, normalized.x - iconNormW / 2)
         );
         const clampedY = Math.max(
           0,
-          Math.min(1 - normH, normalized.y - normH / 2)
+          Math.min(1 - iconNormH, normalized.y - iconNormH / 2)
         );
 
         const { absX, absY } = toPdfSpace(pageHit.pageIndex, clampedX, clampedY);
@@ -1636,13 +1645,14 @@ export function useAnnotationController(args: {
           updatedAt: Date.now(),
           x: absX,
           y: absY,
-          width: markerSizePx,
-          height: markerSizePx,
+          width: normW * pr.width,
+          height: normH * pr.height,
           normX: clampedX,
           normY: clampedY,
           normW,
           normH,
           rect: { x: clampedX, y: clampedY, w: normW, h: normH },
+          displayMode: "icon",
         };
 
         if (process.env.NEXT_PUBLIC_DEBUG_PDF === "1") {

@@ -48,6 +48,22 @@ export type ImageAttachment = {
   contentType?: string;
 };
 
+export type PhotoMarkerMode = "icon" | "expanded";
+
+export type PhotoMarker = {
+  id: string;
+  page: number;
+  normX: number;
+  normY: number;
+  normW?: number;
+  normH?: number;
+  createdAt?: string;
+  refNo?: string;
+  note?: string;
+  imageUrls: string[];
+  mode?: PhotoMarkerMode;
+};
+
 // Normalized image marker artifact (0..1 coords on page)
 export type ImageArtifact = {
   id: string;
@@ -107,6 +123,8 @@ export type ImageAnnotation = BaseAnnotation & {
   rect?: NormalizedRect;
   description?: string;
   currentImageIndex?: number;
+  displayMode?: PhotoMarkerMode;
+  refNo?: string;
 };
 
 export type Annotation =

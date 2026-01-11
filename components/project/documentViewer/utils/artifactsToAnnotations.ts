@@ -251,6 +251,10 @@ export function artifactsToAnnotations(data: PdfArtifactsByPage): Annotation[] {
 
           content: String(item.note ?? ""),
           description: String(item.note ?? ""),
+          displayMode:
+            item.displayMode === "expanded" || item.displayMode === "icon"
+              ? item.displayMode
+              : "icon",
 
           ...(rect
             ? {

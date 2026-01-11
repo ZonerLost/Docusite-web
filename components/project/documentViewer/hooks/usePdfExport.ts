@@ -80,7 +80,7 @@
 "use client";
 
 import React from "react";
-import type { Annotation, ImageAnnotation } from "../types";
+import type { Annotation } from "../types";
 
 type ExportedImage = { width: number; height: number; dataUrl: string };
 
@@ -153,17 +153,6 @@ function getPageNumberFromElement(el: HTMLElement, fallback: number): number {
   return fallback;
 }
 
-async function loadImage(url: string): Promise<HTMLImageElement | null> {
-  if (!url) return null;
-  return await new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = url;
-  });
-}
-
 export function usePdfExport(args: {
   domRef: React.RefObject<HTMLDivElement>;
   pdfScrollEl: HTMLDivElement | null;
@@ -171,16 +160,6 @@ export function usePdfExport(args: {
   editingAnnotationId: string | null;
 }) {
   const { domRef, pdfScrollEl, annotations } = args;
-
-  const imageCacheRef = React.useRef(
-    new Map<string, Promise<HTMLImageElement | null>>()
-  );
-
-  const getCachedImage = React.useCallback((url: string) => {
-    const cache = imageCacheRef.current;
-    if (!cache.has(url)) cache.set(url, loadImage(url));
-    return cache.get(url)!;
-  }, []);
 
   const exportPagesAsImages = React.useCallback(async (): Promise<ExportedImage[]> => {
     const root = domRef.current;
@@ -200,7 +179,6 @@ export function usePdfExport(args: {
 
     const headStyle = document.createElement("style");
     headStyle.textContent = `
-      [data-export-scope="1"] .pdf-camera-ui { display:none !important; }
       [data-export-scope="1"] [data-no-export="1"] { display:none !important; }
 
       /* editor chrome */
@@ -218,7 +196,6 @@ export function usePdfExport(args: {
 
     const ignoreElements = (el: Element) => {
       const h = el as HTMLElement;
-      if (h.classList?.contains("pdf-camera-ui")) return true;
       if (h.getAttribute?.("data-no-export") === "1") return true;
       if (h.getAttribute?.("role") === "dialog") return true;
       return false;
@@ -252,7 +229,6 @@ export function usePdfExport(args: {
       if (pageEls.length) {
         const out: ExportedImage[] = [];
         const rootRect = root.getBoundingClientRect();
-        const DEFAULT_IMAGE_WIDTH = 0.15;
 
         for (let index = 0; index < pageEls.length; index++) {
           const pageEl = pageEls[index];
@@ -284,69 +260,6 @@ export function usePdfExport(args: {
             windowWidth: Math.max(root.scrollWidth, window.innerWidth),
             windowHeight: Math.max(root.scrollHeight, window.innerHeight),
           });
-
-          const pageNumber = getPageNumberFromElement(pageEl, index + 1);
-          const imageAnnotations = annotations.filter(
-            (a): a is ImageAnnotation =>
-              a.type === "image" && (a.page || 1) === pageNumber
-          );
-
-          if (imageAnnotations.length) {
-            const ctx = canvas.getContext("2d");
-            if (ctx) {
-              for (const ann of imageAnnotations) {
-                const url = ann.images?.[0]?.url || "";
-                if (!url) continue;
-
-                const img = await getCachedImage(url);
-                if (!img) continue;
-
-                const rect = ann.rect;
-                const normX = Number.isFinite(rect?.x) ? rect!.x : ann.normX;
-                const normY = Number.isFinite(rect?.y) ? rect!.y : ann.normY;
-                const nx =
-                  typeof normX === "number" && Number.isFinite(normX)
-                    ? normX
-                    : null;
-                const ny =
-                  typeof normY === "number" && Number.isFinite(normY)
-                    ? normY
-                    : null;
-                if (nx === null || ny === null) continue;
-
-                const normW = Number.isFinite(rect?.w) ? rect!.w : ann.normW;
-                const normH = Number.isFinite(rect?.h) ? rect!.h : ann.normH;
-
-                const widthPx =
-                  (Number.isFinite(normW) ? normW! : DEFAULT_IMAGE_WIDTH) *
-                  canvas.width;
-
-                const heightPx = Number.isFinite(normH)
-                  ? normH! * canvas.height
-                  : widthPx * (img.naturalHeight / Math.max(1, img.naturalWidth));
-
-                if (!Number.isFinite(widthPx) || !Number.isFinite(heightPx)) continue;
-
-                let xPx = nx * canvas.width;
-                let yPx = ny * canvas.height;
-
-                const clampedW = Math.min(widthPx, canvas.width);
-                const clampedH = Math.min(heightPx, canvas.height);
-
-                if (xPx + clampedW > canvas.width) {
-                  xPx = canvas.width - clampedW;
-                }
-                if (yPx + clampedH > canvas.height) {
-                  yPx = canvas.height - clampedH;
-                }
-
-                xPx = Math.max(0, xPx);
-                yPx = Math.max(0, yPx);
-
-                ctx.drawImage(img, xPx, yPx, clampedW, clampedH);
-              }
-            }
-          }
 
           const dataUrl = canvas.toDataURL("image/png"); // sharper than jpeg
           out.push({ width: canvas.width, height: canvas.height, dataUrl });
@@ -388,7 +301,7 @@ export function usePdfExport(args: {
       // cleanup style
       if (headStyle.parentNode) headStyle.parentNode.removeChild(headStyle);
     }
-  }, [domRef, pdfScrollEl, annotations, getCachedImage]);
+  }, [domRef, pdfScrollEl, annotations]);
 
   return { exportPagesAsImages };
 }

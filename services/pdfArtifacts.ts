@@ -49,6 +49,7 @@ export type CameraPinArtifact = {
   imagePath: string;
   createdAt: number;
   note?: string;
+  displayMode?: "icon" | "expanded";
 
   rect?: NormRect;
   normX?: number;
@@ -85,6 +86,7 @@ export type CameraPinInput = {
   imagePath: string;
   createdAt: Date;
   note?: string;
+  displayMode?: "icon" | "expanded";
 
   rect?: NormRect;
   normX?: number;
@@ -442,6 +444,9 @@ export class PdfArtifactService {
       createdAt: pin.createdAt,
       updatedAt: serverTimestamp(),
     };
+    if (pin.displayMode === "expanded" || pin.displayMode === "icon") {
+      payload.displayMode = pin.displayMode;
+    }
 
       if (safeRect) {
         payload.rect = safeRect;
@@ -536,6 +541,7 @@ export class PdfArtifactService {
             imagePath: String(d.imagePath ?? ""),
             createdAt,
             note: typeof d.note === "string" ? d.note : undefined,
+            displayMode: d.displayMode === "expanded" || d.displayMode === "icon" ? d.displayMode : undefined,
             rect: d.rect && typeof d.rect === "object" ? d.rect : undefined,
             normX: typeof d.normX === "number" ? d.normX : undefined,
             normY: typeof d.normY === "number" ? d.normY : undefined,

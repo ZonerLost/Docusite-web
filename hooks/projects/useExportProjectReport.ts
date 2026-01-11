@@ -6,11 +6,11 @@ import toast from "react-hot-toast";
 import { doc, getDoc } from "firebase/firestore";
 import { ensureSignedIn } from "@/lib/auth.init";
 import { auth, db } from "@/lib/firebase-client";
-import { bytesToBase64 } from "@/utils/bytes";
 import { exportProjectReport } from "@/services/projectReportApi";
 import type { DocumentViewerHandle } from "@/types/documentViewer";
 import type { SelectedFile, StoredProject } from "@/types/project";
 import type { ProjectFilePhoto } from "@/components/project/documentViewer/types";
+import type { PhotoMarkerExport, ReportProjectMeta } from "@/types/report";
 
 type ExportProjectReportInput = {
   project: StoredProject | null;
@@ -56,7 +56,7 @@ export function useExportProjectReport(
         throw new Error("No pages available to export.");
       }
 
-      let projectMeta = {
+      let projectMeta: ReportProjectMeta = {
         id: project.id,
         name: project.name,
         clientName: project.clientName,
@@ -86,13 +86,15 @@ export function useExportProjectReport(
         console.warn("Failed to fetch report metadata:", err);
       }
 
-      const { buildReportPdf } = await import("@/lib/pdf/reportExport");
-      const pdfBytes = await buildReportPdf({
-        project: projectMeta,
-        fileName: selectedFile.name,
-        pages,
-        photos,
-      });
+      const photoMarkers: PhotoMarkerExport[] = photos.map((photo) => ({
+        id: photo.id,
+        page: typeof photo.page === "number" ? photo.page : 1,
+        refNo: photo.refNo || photo.id,
+        createdAt:
+          typeof photo.createdAtMs === "number" ? photo.createdAtMs : undefined,
+        note: photo.description || undefined,
+        imageUrls: photo.url ? [photo.url] : [],
+      }));
 
       const token = await auth.currentUser?.getIdToken();
       const payload = await exportProjectReport(
@@ -101,7 +103,9 @@ export function useExportProjectReport(
           pdfId: selectedFile.id,
           fileName: selectedFile.name,
           fileUrl,
-          pdfBase64: bytesToBase64(pdfBytes),
+          project: projectMeta,
+          drawingPages: pages,
+          photoMarkers,
         },
         token
       );

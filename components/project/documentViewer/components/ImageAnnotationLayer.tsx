@@ -27,7 +27,7 @@ type Props = {
   onCommit: (updater: (prev: Annotation[]) => Annotation[], updatedId: string) => void;
 };
 
-const MARKER_PX = 28;
+const MARKER_PX = 32;
 const DRAG_THRESHOLD_PX = 4;
 const MIN_IMAGE_PX = 48;
 
@@ -132,8 +132,11 @@ export default function ImageAnnotationLayer({
     offsetY: number;
     startX: number;
     startY: number;
-    normW: number;
-    normH: number;
+    displayNormW: number;
+    displayNormH: number;
+    persistNormW: number;
+    persistNormH: number;
+    mode: "icon" | "expanded";
     hasMoved: boolean;
   } | null>(null);
 
@@ -207,12 +210,30 @@ export default function ImageAnnotationLayer({
         const clampedX = Math.max(0, Math.min(1 - normW, normX));
         const clampedY = Math.max(0, Math.min(1 - normH, normY));
 
-        const left = pageRect.left + clampedX * pageRect.width;
-        const top = pageRect.top + clampedY * pageRect.height;
-        const width = normW * pageRect.width;
-        const height = normH * pageRect.height;
-
         const hasImage = (a.images?.length || 0) > 0;
+        const displayMode =
+          exportMode
+            ? "icon"
+            : a.displayMode === "expanded"
+            ? "expanded"
+            : "icon";
+        const isExpanded = displayMode === "expanded" && hasImage;
+
+        const markerNormW = MARKER_PX / Math.max(1, pageRect.width);
+        const markerNormH = MARKER_PX / Math.max(1, pageRect.height);
+        const displayNormW = isExpanded ? normW : markerNormW;
+        const displayNormH = isExpanded ? normH : markerNormH;
+
+        const clampW = displayNormW;
+        const clampH = displayNormH;
+
+        const clampedDisplayX = Math.max(0, Math.min(1 - clampW, normX));
+        const clampedDisplayY = Math.max(0, Math.min(1 - clampH, normY));
+
+        const left = pageRect.left + clampedDisplayX * pageRect.width;
+        const top = pageRect.top + clampedDisplayY * pageRect.height;
+        const width = displayNormW * pageRect.width;
+        const height = displayNormH * pageRect.height;
 
         const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
           if (exportMode) return;
@@ -230,8 +251,8 @@ export default function ImageAnnotationLayer({
           const localX = xCanvasPx - pageRect.left;
           const localY = yCanvasPx - pageRect.top;
 
-          const annLeftPx = clampedX * pageRect.width;
-          const annTopPx = clampedY * pageRect.height;
+        const annLeftPx = clampedDisplayX * pageRect.width;
+        const annTopPx = clampedDisplayY * pageRect.height;
 
           dragRef.current = {
             id: a.id,
@@ -241,8 +262,11 @@ export default function ImageAnnotationLayer({
             offsetY: localY - annTopPx,
             startX: localX,
             startY: localY,
-            normW,
-            normH,
+            displayNormW,
+            displayNormH,
+            persistNormW: normW,
+            persistNormH: normH,
+            mode: displayMode,
             hasMoved: false,
           };
 
@@ -275,10 +299,22 @@ export default function ImageAnnotationLayer({
           let nextNormX = (localX - drag.offsetX) / Math.max(1, pageRect.width);
           let nextNormY = (localY - drag.offsetY) / Math.max(1, pageRect.height);
 
-          nextNormX = Math.max(0, Math.min(1 - drag.normW, nextNormX));
-          nextNormY = Math.max(0, Math.min(1 - drag.normH, nextNormY));
+          const clampW = drag.mode === "icon" ? drag.displayNormW : drag.persistNormW;
+          const clampH = drag.mode === "icon" ? drag.displayNormH : drag.persistNormH;
+          nextNormX = Math.max(0, Math.min(1 - clampW, nextNormX));
+          nextNormY = Math.max(0, Math.min(1 - clampH, nextNormY));
 
-          onUpdate(buildUpdater(a.id, pageIdx, nextNormX, nextNormY, drag.normW, drag.normH, pageRect));
+          onUpdate(
+            buildUpdater(
+              a.id,
+              pageIdx,
+              nextNormX,
+              nextNormY,
+              drag.persistNormW,
+              drag.persistNormH,
+              pageRect
+            )
+          );
         };
 
         const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -305,13 +341,27 @@ export default function ImageAnnotationLayer({
           let nextNormX = (localX - drag.offsetX) / Math.max(1, pageRect.width);
           let nextNormY = (localY - drag.offsetY) / Math.max(1, pageRect.height);
 
-          nextNormX = Math.max(0, Math.min(1 - drag.normW, nextNormX));
-          nextNormY = Math.max(0, Math.min(1 - drag.normH, nextNormY));
+          const clampW = drag.mode === "icon" ? drag.displayNormW : drag.persistNormW;
+          const clampH = drag.mode === "icon" ? drag.displayNormH : drag.persistNormH;
+          nextNormX = Math.max(0, Math.min(1 - clampW, nextNormX));
+          nextNormY = Math.max(0, Math.min(1 - clampH, nextNormY));
 
-          onCommit(buildUpdater(a.id, pageIdx, nextNormX, nextNormY, drag.normW, drag.normH, pageRect), a.id);
+          onCommit(
+            buildUpdater(
+              a.id,
+              pageIdx,
+              nextNormX,
+              nextNormY,
+              drag.persistNormW,
+              drag.persistNormH,
+              pageRect
+            ),
+            a.id
+          );
         };
 
         const handleResizeDown = (e: React.PointerEvent<HTMLSpanElement>) => {
+          if (!isExpanded) return;
           if (exportMode) return;
           if (e.pointerType === "mouse" && e.button !== 0) return;
           e.preventDefault();
@@ -335,6 +385,7 @@ export default function ImageAnnotationLayer({
         };
 
         const handleResizeMove = (e: React.PointerEvent<HTMLSpanElement>) => {
+          if (!isExpanded) return;
           const resize = resizeRef.current;
           if (!resize || resize.id !== a.id || resize.pointerId !== e.pointerId) return;
 
@@ -364,6 +415,7 @@ export default function ImageAnnotationLayer({
         };
 
         const handleResizeUp = (e: React.PointerEvent<HTMLSpanElement>) => {
+          if (!isExpanded) return;
           const resize = resizeRef.current;
           if (!resize || resize.id !== a.id || resize.pointerId !== e.pointerId) return;
 
@@ -398,7 +450,6 @@ export default function ImageAnnotationLayer({
           <button
             key={a.id}
             type="button"
-            data-no-export="1"
             className="pointer-events-auto absolute flex items-center justify-center rounded border border-black/10 bg-white/90 shadow"
             style={{ left, top, width, height }}
             title={hasImage ? "View image" : "Upload image"}
@@ -411,7 +462,7 @@ export default function ImageAnnotationLayer({
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
           >
-            {hasImage ? (
+            {isExpanded ? (
               <>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -432,7 +483,7 @@ export default function ImageAnnotationLayer({
                 />
               </>
             ) : (
-              <span className="pdf-camera-ui inline-flex h-6 w-6 items-center justify-center rounded-full">
+              <span className="pdf-camera-ui inline-flex h-8 w-8 items-center justify-center rounded-full">
                 <Camera className="h-4 w-4 text-gray-500" />
               </span>
             )}
