@@ -77,6 +77,16 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
 NEXT_PUBLIC_FIREBASE_APP_ID=
 ```
 
+Server-side (API) variables in `.env.local`:
+
+```
+FIREBASE_STORAGE_BUCKET=
+FIREBASE_PROJECT_ID=
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_PRIVATE_KEY=
+FIREBASE_SERVICE_ACCOUNT_PATH=
+```
+
 ### Firestore Security Rules
 
 The file `firestore.rules` enforces user-only access to `users/{uid}`. Deploy with Firebase CLI:

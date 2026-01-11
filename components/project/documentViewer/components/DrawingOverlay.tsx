@@ -1,17 +1,33 @@
 "use client";
 
 import React from "react";
+import type { PdfOffset, PdfScroll } from "../types";
+
+type LeftTopLike = { left?: number; top?: number; x?: number; y?: number };
+
+function getLeftTop(v: LeftTopLike | null | undefined) {
+  const left = typeof v?.left === "number" ? v.left : typeof v?.x === "number" ? v.x : 0;
+  const top = typeof v?.top === "number" ? v.top : typeof v?.y === "number" ? v.y : 0;
+  return { left, top };
+}
 
 export default function DrawingOverlay(props: {
   drawingPath: { x: number; y: number }[];
   visible: boolean;
+  pdfContentOffset: PdfOffset | { x?: number; y?: number };
+  pdfScroll: PdfScroll | { x?: number; y?: number };
 }) {
-  const { drawingPath, visible } = props;
+  const { drawingPath, visible, pdfContentOffset, pdfScroll } = props;
   if (!visible || drawingPath.length < 2) return null;
 
+  const { left: contentLeft, top: contentTop } = getLeftTop(pdfContentOffset);
+  const { left: scrollLeft, top: scrollTop } = getLeftTop(pdfScroll);
+
   const pathData = drawingPath.reduce((path, point, index) => {
-    if (index === 0) return `M ${point.x} ${point.y}`;
-    return `${path} L ${point.x} ${point.y}`;
+    const sx = contentLeft + point.x - scrollLeft;
+    const sy = contentTop + point.y - scrollTop;
+    if (index === 0) return `M ${sx} ${sy}`;
+    return `${path} L ${sx} ${sy}`;
   }, "");
 
   return (

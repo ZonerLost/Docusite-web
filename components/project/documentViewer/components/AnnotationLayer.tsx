@@ -355,7 +355,9 @@ import React from "react";
 import type { Annotation, PageRect, PdfOffset, PdfScroll, DragNoteState } from "../types";
 import { getAnnotationScreenBox } from "../utils/geometry";
 
-function getLeftTop(v: any) {
+type LeftTopLike = { left?: number; top?: number; x?: number; y?: number };
+
+function getLeftTop(v: LeftTopLike | null | undefined) {
   const left = typeof v?.left === "number" ? v.left : typeof v?.x === "number" ? v.x : 0;
   const top = typeof v?.top === "number" ? v.top : typeof v?.y === "number" ? v.y : 0;
   return { left, top };
@@ -408,7 +410,7 @@ export default function AnnotationLayer(props: {
   return (
     <>
       {annotations.map((annotation) => {
-        // ✅ draw strokes
+        // Draw strokes
         if (annotation.type === "draw" && annotation.pathData?.length) {
           const penSizes = { small: 2, medium: 4, large: 6 } as const;
           const strokeWidth = annotation.penSize ? penSizes[annotation.penSize] : penSizes.medium;
@@ -419,8 +421,8 @@ export default function AnnotationLayer(props: {
               ? (() => {
                   const pr = pageRects[annotation.page - 1];
                   return annotation.pathDataNorm.reduce((acc, p, idx) => {
-                    const sx = contentLeft + pr.left + p.nx * pr.width - scrollLeft;
-                    const sy = contentTop + pr.top + p.ny * pr.height - scrollTop;
+                    const sx = pr.left + p.nx * pr.width;
+                    const sy = pr.top + p.ny * pr.height;
                     return idx === 0 ? `M ${sx} ${sy}` : `${acc} L ${sx} ${sy}`;
                   }, "");
                 })()
@@ -668,6 +670,6 @@ export default function AnnotationLayer(props: {
           </div>
         );
       })}
-    </> 
+    </>
   );
 }

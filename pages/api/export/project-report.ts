@@ -1,8 +1,15 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import crypto from "node:crypto";
 import { sha1 } from "js-sha1";
-import admin, { getAdminBucket, getAdminDb } from "@/lib/server/firebaseAdmin";
+import admin, {
+  getAdminApp,
+  getAdminBucket,
+  getAdminDb,
+  getStorageBucketName,
+} from "@/lib/server/firebaseAdmin";
 import { getUserFromToken } from "@/lib/server/auth";
+
+let didLogBucket = false;
 
 type ExportRequestBody = {
   projectId?: string;
@@ -44,6 +51,37 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method not allowed" });
   }
 
+  const envStatus = {
+    hasProjectId: !!process.env.FIREBASE_PROJECT_ID,
+    hasClientEmail: !!process.env.FIREBASE_CLIENT_EMAIL,
+    hasPrivateKey: !!process.env.FIREBASE_PRIVATE_KEY,
+    hasStorageBucket: !!process.env.FIREBASE_STORAGE_BUCKET,
+    hasPublicStorageBucket: !!process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    hasServiceAccountPath: !!process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
+  };
+
+  if (!didLogBucket) {
+    console.log("[export] env:", envStatus);
+  }
+  let bucketName = "";
+  try {
+    bucketName = getStorageBucketName();
+    const app = getAdminApp();
+    if (!didLogBucket) {
+      console.log("[export] admin project:", app.options.projectId || "");
+    }
+  } catch (err: any) {
+    console.error("[export] firebase admin init failed:", err);
+    return res.status(500).json({
+      error: err?.message || "Firebase admin is not configured.",
+    });
+  }
+
+  if (!didLogBucket) {
+    console.log("[export] bucket:", bucketName);
+    didLogBucket = true;
+  }
+
   const user = await getUserFromToken(req);
   if (!user) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -66,6 +104,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: "Missing required export parameters" });
   }
 
+  console.log("[export] projectId:", projectId);
+
   const buffer = Buffer.from(pdfBase64, "base64");
   if (!buffer.length) {
     return res.status(400).json({ error: "Empty PDF payload" });
@@ -77,7 +117,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const token = crypto.randomUUID();
 
   try {
-    const bucket = getAdminBucket();
+    const bucket = getAdminBucket(bucketName);
     await bucket.file(storagePath).save(buffer, {
       contentType: "application/pdf",
       resumable: false,

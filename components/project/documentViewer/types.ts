@@ -147,19 +147,7 @@ export type DocumentViewerProps = {
   penSize?: PenSize;
 };
 
-export type DocumentViewerHandle = {
-  undo: () => void;
-  redo: () => void;
-  addImageAnnotation?: (imageUrl: string, note: string) => void;
-  addMultipleImages?: (imageUrls: string[], note: string) => void;
-  addImagesWithUpload?: (files: File[], description: string) => Promise<void> | void;
-  addNoteAnnotation?: (text: string, x?: number, y?: number) => void;
-  openCategory?: (name: string) => void;
-  domRef: HTMLDivElement | null;
-  exportPagesAsImages: () => Promise<
-    { width: number; height: number; dataUrl: string }[]
-  >;
-};
+export type { DocumentViewerHandle } from "@/types/documentViewer";
 
 export type PageRect = { left: number; top: number; width: number; height: number };
 export type PdfScroll = { left: number; top: number };
