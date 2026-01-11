@@ -175,7 +175,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       );
     }
 
-    return res.status(200).json({ url });
+    res.status(200);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${safeName}"`
+    );
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Length", buffer.length.toString());
+    res.setHeader("X-Export-Url", url);
+    return res.end(buffer);
   } catch (err: any) {
     console.error("Report export upload failed:", err);
     return res.status(500).json({ error: err?.message || "Upload failed" });

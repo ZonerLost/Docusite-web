@@ -7,6 +7,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { ensureSignedIn } from "@/lib/auth.init";
 import { auth, db } from "@/lib/firebase-client";
 import { exportProjectReport } from "@/services/projectReportApi";
+import { downloadBlob } from "@/utils/downloadBlob";
 import type { DocumentViewerHandle } from "@/types/documentViewer";
 import type { SelectedFile, StoredProject } from "@/types/project";
 import type { ProjectFilePhoto } from "@/components/project/documentViewer/types";
@@ -30,6 +31,15 @@ export function useExportProjectReport(
 ): ExportProjectReportState {
   const { project, selectedFile, fileUrl, photos, exportRef } = input;
   const [isExporting, setIsExporting] = useState(false);
+
+  const getSafeFileName = useCallback((value: string) => {
+    const cleaned = value
+      .replace(/[\\/:*?"<>|\u0000-\u001F]/g, "_")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!cleaned) return "Project Report.pdf";
+    return cleaned.toLowerCase().endsWith(".pdf") ? cleaned : `${cleaned}.pdf`;
+  }, []);
 
   const exportPdf = useCallback(async () => {
     if (isExporting) return;
@@ -97,7 +107,7 @@ export function useExportProjectReport(
       }));
 
       const token = await auth.currentUser?.getIdToken();
-      const payload = await exportProjectReport(
+      const result = await exportProjectReport(
         {
           projectId: project.id,
           pdfId: selectedFile.id,
@@ -111,9 +121,10 @@ export function useExportProjectReport(
       );
 
       toast.success("Report exported.", { id: toastId });
-      if (payload?.url) {
-        window.open(payload.url, "_blank", "noopener,noreferrer");
-      }
+      const fallbackName = getSafeFileName(
+        projectMeta.name || selectedFile.name || "Project Report"
+      );
+      downloadBlob(result.blob, result.fileName || fallbackName);
     } catch (err: any) {
       console.error("Export failed:", err);
       toast.error(err?.message || "Export failed.", { id: toastId });
@@ -131,6 +142,7 @@ export function useExportProjectReport(
     selectedFile?.id,
     fileUrl,
     photos,
+    getSafeFileName,
   ]);
 
   return { isExporting, exportPdf };
