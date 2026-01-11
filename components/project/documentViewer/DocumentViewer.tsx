@@ -52,6 +52,20 @@ const dbg = (...args: any[]) => {
   if (isDebugEnabled()) console.log("[PDF-UPLOAD]", ...args);
 };
 
+const DEFAULT_IMAGE_NORM_WIDTH = 0.25;
+const DEFAULT_IMAGE_NORM_HEIGHT = 0.2;
+const IMAGE_STAGGER_STEP = 0.05;
+const IMAGE_MAX_START = 0.8;
+
+function makeImageId() {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {}
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 const DocumentViewer = React.memo(
   forwardRef<DocumentViewerHandle, DocumentViewerProps>(function DocumentViewer(
     {
@@ -86,6 +100,11 @@ const DocumentViewer = React.memo(
     const [exportMode, setExportMode] = React.useState(false);
     const [isModalOpen, setIsModalOpen] = React.useState(false);
     const [previewImageAnnId, setPreviewImageAnnId] = React.useState<string | null>(null);
+    const lastPointerRef = React.useRef<{
+      pageIdx: number;
+      normX: number;
+      normY: number;
+    } | null>(null);
 
     React.useEffect(() => {
       dbg("debug enabled", { env: process.env.NEXT_PUBLIC_DEBUG_PDF });
@@ -155,6 +174,166 @@ const DocumentViewer = React.memo(
 
     // Overlay metrics for annotations
     const overlay = usePdfOverlayMetrics(domRef);
+
+    const recordPointerPosition = React.useCallback(
+      (e: React.PointerEvent<HTMLDivElement>) => {
+        if (!overlay.pageRects.length) return;
+        const pageIdx = overlay.getPageIndexFromClientPoint(
+          e.clientX,
+          e.clientY
+        );
+        if (pageIdx < 0) return;
+        const norm = overlay.clientToPageNormalized(
+          pageIdx,
+          e.clientX,
+          e.clientY
+        );
+        lastPointerRef.current = {
+          pageIdx,
+          normX: norm.x,
+          normY: norm.y,
+        };
+      },
+      [
+        overlay.pageRects.length,
+        overlay.getPageIndexFromClientPoint,
+        overlay.clientToPageNormalized,
+      ]
+    );
+
+    const getActivePageIndex = React.useCallback(() => {
+      const scroller = overlay.pdfScrollEl;
+      const root = domRef.current;
+      if (!scroller || !root || overlay.pageRects.length === 0) {
+        return overlay.getFirstVisiblePageIndex();
+      }
+
+      const rootRect = root.getBoundingClientRect();
+      const scrollerRect = scroller.getBoundingClientRect();
+      const viewportTop = scrollerRect.top - rootRect.top;
+      const viewportBottom = viewportTop + scrollerRect.height;
+      const viewportMid = viewportTop + scrollerRect.height / 2;
+
+      for (let i = 0; i < overlay.pageRects.length; i++) {
+        const pr = overlay.pageRects[i];
+        if (!pr) continue;
+        if (viewportMid >= pr.top && viewportMid <= pr.top + pr.height) {
+          return i;
+        }
+      }
+
+      let bestIdx = overlay.getFirstVisiblePageIndex();
+      let bestVisible = -1;
+      for (let i = 0; i < overlay.pageRects.length; i++) {
+        const pr = overlay.pageRects[i];
+        if (!pr) continue;
+        const visible = Math.max(
+          0,
+          Math.min(pr.top + pr.height, viewportBottom) -
+            Math.max(pr.top, viewportTop)
+        );
+        if (visible > bestVisible) {
+          bestVisible = visible;
+          bestIdx = i;
+        }
+      }
+      return bestIdx >= 0 ? bestIdx : 0;
+    }, [overlay.pdfScrollEl, overlay.pageRects, overlay.getFirstVisiblePageIndex]);
+
+    const resolveImagePlacement = React.useCallback(
+      (index: number) => {
+        const last = lastPointerRef.current;
+        const fallbackPageIdx = getActivePageIndex();
+        const useLast = last && overlay.pageRects[last.pageIdx];
+        const pageIdx = useLast ? last.pageIdx : fallbackPageIdx;
+
+        const baseX = useLast ? last!.normX : 0.1;
+        const baseY = useLast ? last!.normY : 0.1;
+
+        const normW = DEFAULT_IMAGE_NORM_WIDTH;
+        const normH = DEFAULT_IMAGE_NORM_HEIGHT;
+
+        let normX = baseX + index * IMAGE_STAGGER_STEP;
+        let normY = baseY + index * IMAGE_STAGGER_STEP;
+
+        normX = Math.min(IMAGE_MAX_START, Math.max(0, normX));
+        normY = Math.min(IMAGE_MAX_START, Math.max(0, normY));
+
+        normX = Math.min(1 - normW, normX);
+        normY = Math.min(1 - normH, normY);
+
+        return { pageIdx, normX, normY, normW, normH };
+      },
+      [getActivePageIndex, overlay.pageRects]
+    );
+
+    const buildImageAnnotation = React.useCallback(
+      (args: {
+        id: string;
+        upload: ProjectFilePhoto;
+        description: string;
+        placement: {
+          pageIdx: number;
+          normX: number;
+          normY: number;
+          normW: number;
+          normH: number;
+        };
+      }): ImageAnnotation => {
+        const { id, upload, description, placement } = args;
+        const pr = overlay.pageRects[placement.pageIdx] || {
+          left: 0,
+          top: 0,
+          width: 900,
+          height: 1200,
+        };
+        const pageLeftPdf =
+          pr.left - overlay.pdfContentOffset.left + overlay.pdfScroll.left;
+        const pageTopPdf =
+          pr.top - overlay.pdfContentOffset.top + overlay.pdfScroll.top;
+
+        const absX = pageLeftPdf + placement.normX * pr.width;
+        const absY = pageTopPdf + placement.normY * pr.height;
+        const width = placement.normW * pr.width;
+        const height = placement.normH * pr.height;
+        const trimmed = (description || "").trim();
+
+        return {
+          id,
+          type: "image",
+          page: placement.pageIdx + 1,
+          x: absX,
+          y: absY,
+          width,
+          height,
+          images: [
+            {
+              url: upload.url,
+              storageKey: upload.storageKey || upload.storagePath || "",
+              contentType: upload.contentType || upload.mimeType || "",
+            },
+          ],
+          currentImageIndex: 0,
+          content: trimmed,
+          description: trimmed,
+          noteRelX: 0.5,
+          noteRelY: 0.5,
+          rect: {
+            x: placement.normX,
+            y: placement.normY,
+            w: placement.normW,
+            h: placement.normH,
+          },
+          normX: placement.normX,
+          normY: placement.normY,
+          normW: placement.normW,
+          normH: placement.normH,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+      },
+      [overlay.pageRects, overlay.pdfContentOffset, overlay.pdfScroll]
+    );
 
     // History
     const history = useAnnotationHistory({ onUndo, onRedo });
@@ -272,6 +451,22 @@ const DocumentViewer = React.memo(
         });
       },
     });
+
+    const handlePointerDown = React.useCallback(
+      (e: React.PointerEvent<HTMLDivElement>) => {
+        recordPointerPosition(e);
+        controller.handlePointerDown(e);
+      },
+      [recordPointerPosition, controller.handlePointerDown]
+    );
+
+    const handlePointerMove = React.useCallback(
+      (e: React.PointerEvent<HTMLDivElement>) => {
+        recordPointerPosition(e);
+        controller.handlePointerMove(e);
+      },
+      [recordPointerPosition, controller.handlePointerMove]
+    );
 
     // ✅ only render overlays when PDF is actually visible + measured
     const shouldShowPdfOverlays = React.useMemo(() => {
@@ -484,74 +679,163 @@ const DocumentViewer = React.memo(
           description,
           ts: new Date().toISOString(),
         });
-        if (!targetAnnId) {
-          dbg("BLOCKED: missing targetAnnId", {
-            traceId,
-            modalRef: modalImageAnnIdRef.current,
-            activeRef: activeImageAnnIdRef.current,
-            activeState: activeImageAnnId,
-            projectId: project?.id,
-            pdfId: selectedFile?.id,
-            pdfName: selectedFile?.name,
-            files: files?.length,
-            description,
-            ts: new Date().toISOString(),
-          });
-          toast.error("Select or create an image marker on the PDF first.");
-          return;
-        }
         const toastId = toast.loading("Uploading photo(s)...");
         try {
-          const targetAnn = history.annotationsRef.current.find(
-            (a) => a.type === "image" && a.id === targetAnnId
-          ) as ImageAnnotation | undefined;
+          const targetAnn = targetAnnId
+            ? (history.annotationsRef.current.find(
+                (a) => a.type === "image" && a.id === targetAnnId
+              ) as ImageAnnotation | undefined)
+            : undefined;
 
-          const normX =
-            typeof targetAnn?.normX === "number"
-              ? targetAnn.normX
-              : targetAnn?.rect?.x;
-          const normY =
-            typeof targetAnn?.normY === "number"
-              ? targetAnn.normY
-              : targetAnn?.rect?.y;
-          const normW =
-            typeof targetAnn?.normW === "number"
-              ? targetAnn.normW
-              : targetAnn?.rect?.w;
-          const normH =
-            typeof targetAnn?.normH === "number"
-              ? targetAnn.normH
-              : targetAnn?.rect?.h;
+          if (targetAnn && targetAnnId) {
+            const normX =
+              typeof targetAnn.normX === "number"
+                ? targetAnn.normX
+                : targetAnn.rect?.x ?? 0.1;
+            const normY =
+              typeof targetAnn.normY === "number"
+                ? targetAnn.normY
+                : targetAnn.rect?.y ?? 0.1;
+            const normW =
+              typeof targetAnn.normW === "number"
+                ? targetAnn.normW
+                : targetAnn.rect?.w ?? DEFAULT_IMAGE_NORM_WIDTH;
+            const normH =
+              typeof targetAnn.normH === "number"
+                ? targetAnn.normH
+                : targetAnn.rect?.h ?? DEFAULT_IMAGE_NORM_HEIGHT;
 
-          const results = await Promise.allSettled(
-            files.map((file) =>
-              uploadProjectFilePhoto({
-                projectId: project.id,
-                pdfId: selectedFile.id,
-                file,
-                description: description || "",
-                annotationId: targetAnnId,
-                page: targetAnn?.page,
-                normX,
-                normY,
-                normW,
-                normH,
-              })
-            )
-          );
-          const ok = results.filter((r) => r.status === "fulfilled").length;
-          const total = results.length;
-          if (ok === total) {
-            toast.success(
-              total > 1 ? `${total} photos uploaded.` : "Photo uploaded.",
-              { id: toastId }
+            const results = await Promise.allSettled(
+              files.map((file) =>
+                uploadProjectFilePhoto({
+                  projectId: project.id,
+                  pdfId: selectedFile.id,
+                  file,
+                  description: description || "",
+                  annotationId: targetAnnId,
+                  page: targetAnn.page,
+                  normX,
+                  normY,
+                  normW,
+                  normH,
+                })
+              )
             );
-          } else if (ok > 0) {
-            toast.success(`${ok}/${total} uploaded. Some failed.`, {
-              id: toastId,
-            });
+
+            const uploads: ProjectFilePhoto[] = [];
+            for (const result of results) {
+              if (result.status === "fulfilled") uploads.push(result.value);
+            }
+
+            if (uploads.length) {
+              const merged = history.annotationsRef.current.map((ann) => {
+                if (ann.type !== "image" || ann.id !== targetAnnId) return ann;
+                const existing = Array.isArray(ann.images) ? ann.images : [];
+                const additions = uploads.map((u) => ({
+                  url: u.url,
+                  storageKey: u.storageKey || u.storagePath || "",
+                  contentType: u.contentType || u.mimeType || "",
+                }));
+                const nextDesc =
+                  (description || "").trim() ||
+                  ann.description ||
+                  ann.content ||
+                  "";
+                return {
+                  ...ann,
+                  images: [...existing, ...additions],
+                  description: nextDesc,
+                  content: nextDesc,
+                  updatedAt: Date.now(),
+                };
+              });
+
+              history.apply(merged, true);
+              const updated = merged.find(
+                (a) => a.type === "image" && a.id === targetAnnId
+              ) as ImageAnnotation | undefined;
+              if (updated) controller.persistImageAnnotation(updated);
+              setActiveImageAnnIdSafe(targetAnnId);
+            }
+
+            const ok = uploads.length;
+            const total = results.length;
+            if (ok === total) {
+              toast.success(
+                total > 1 ? `${total} photos uploaded.` : "Photo uploaded.",
+                { id: toastId }
+              );
+            } else if (ok > 0) {
+              toast.success(`${ok}/${total} uploaded. Some failed.`, {
+                id: toastId,
+              });
+            } else {
+              toast.error("Upload failed. Please try again.", { id: toastId });
+            }
           } else {
-            toast.error("Upload failed. Please try again.", { id: toastId });
+            const items = files.map((file, index) => ({
+              file,
+              placement: resolveImagePlacement(index),
+              annId: makeImageId(),
+            }));
+
+            const results = await Promise.allSettled(
+              items.map((item) =>
+                uploadProjectFilePhoto({
+                  projectId: project.id,
+                  pdfId: selectedFile.id,
+                  file: item.file,
+                  description: description || "",
+                  annotationId: item.annId,
+                  page: item.placement.pageIdx + 1,
+                  normX: item.placement.normX,
+                  normY: item.placement.normY,
+                  normW: item.placement.normW,
+                  normH: item.placement.normH,
+                }).then((upload) => ({
+                  upload,
+                  placement: item.placement,
+                  annId: item.annId,
+                }))
+              )
+            );
+
+            const created: ImageAnnotation[] = [];
+            for (const result of results) {
+              if (result.status !== "fulfilled") continue;
+              created.push(
+                buildImageAnnotation({
+                  id: result.value.annId,
+                  upload: result.value.upload,
+                  description,
+                  placement: result.value.placement,
+                })
+              );
+            }
+
+            if (created.length) {
+              history.apply(
+                [...history.annotationsRef.current, ...created],
+                true
+              );
+              created.forEach((ann) => controller.persistImageAnnotation(ann));
+              setActiveImageAnnIdSafe(created[created.length - 1].id);
+            }
+
+            const ok = created.length;
+            const total = results.length;
+            if (ok === total) {
+              toast.success(
+                total > 1 ? `${total} photos uploaded.` : "Photo uploaded.",
+                { id: toastId }
+              );
+            } else if (ok > 0) {
+              toast.success(`${ok}/${total} uploaded. Some failed.`, {
+                id: toastId,
+              });
+            } else {
+              toast.error("Upload failed. Please try again.", { id: toastId });
+            }
           }
         } catch (err: any) {
           const code = err?.code || err?.message || "";
@@ -624,8 +908,8 @@ const DocumentViewer = React.memo(
                   : "default",
             }}
             onClick={controller.handleCanvasClick}
-            onPointerDown={controller.handlePointerDown}
-            onPointerMove={controller.handlePointerMove}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
             onPointerUp={controller.handlePointerUp}
             onPointerLeave={controller.handlePointerUp}
             onPointerCancel={controller.handlePointerUp}
@@ -896,102 +1180,178 @@ const DocumentViewer = React.memo(
               files: pictures?.length,
               ts: new Date().toISOString(),
             });
-            if (!project?.id || !selectedFile?.id || !targetAnnId) {
-              dbg("BLOCKED: missing targetAnnId", {
-                traceId,
-                modalRef: modalImageAnnIdRef.current,
-                activeRef: activeImageAnnIdRef.current,
-                activeState: activeImageAnnId,
-                projectId: project?.id,
-                pdfId: selectedFile?.id,
-                pdfName: selectedFile?.name,
-                files: pictures?.length,
-                ts: new Date().toISOString(),
-              });
-              toast.error("Select or create an image marker on the PDF first.");
+            if (!project?.id || !selectedFile?.id || !pictures?.length) {
               setIsModalOpen(false);
               return;
             }
 
             const toastId = toast.loading("Uploading photo(s)...");
             try {
-              const targetAnn = history.annotationsRef.current.find(
-                (a) => a.type === "image" && a.id === targetAnnId
-              ) as ImageAnnotation | undefined;
+              const targetAnn = targetAnnId
+                ? (history.annotationsRef.current.find(
+                    (a) => a.type === "image" && a.id === targetAnnId
+                  ) as ImageAnnotation | undefined)
+                : undefined;
 
-              const normX =
-                typeof targetAnn?.normX === "number"
-                  ? targetAnn.normX
-                  : targetAnn?.rect?.x;
-              const normY =
-                typeof targetAnn?.normY === "number"
-                  ? targetAnn.normY
-                  : targetAnn?.rect?.y;
-              const normW =
-                typeof targetAnn?.normW === "number"
-                  ? targetAnn.normW
-                  : targetAnn?.rect?.w;
-              const normH =
-                typeof targetAnn?.normH === "number"
-                  ? targetAnn.normH
-                  : targetAnn?.rect?.h;
+              if (targetAnn && targetAnnId) {
+                const normX =
+                  typeof targetAnn.normX === "number"
+                    ? targetAnn.normX
+                    : targetAnn.rect?.x ?? 0.1;
+                const normY =
+                  typeof targetAnn.normY === "number"
+                    ? targetAnn.normY
+                    : targetAnn.rect?.y ?? 0.1;
+                const normW =
+                  typeof targetAnn.normW === "number"
+                    ? targetAnn.normW
+                    : targetAnn.rect?.w ?? DEFAULT_IMAGE_NORM_WIDTH;
+                const normH =
+                  typeof targetAnn.normH === "number"
+                    ? targetAnn.normH
+                    : targetAnn.rect?.h ?? DEFAULT_IMAGE_NORM_HEIGHT;
 
-              const uploads = await Promise.all(
-                pictures.map((file) =>
-                  uploadProjectFilePhoto({
-                    projectId: project.id,
-                    pdfId: selectedFile.id,
-                    file,
-                    description,
-                    annotationId: targetAnnId,
-                    page: targetAnn?.page,
-                    normX,
-                    normY,
-                    normW,
-                    normH,
-                  })
-                )
-              );
+                const results = await Promise.allSettled(
+                  pictures.map((file) =>
+                    uploadProjectFilePhoto({
+                      projectId: project.id,
+                      pdfId: selectedFile.id,
+                      file,
+                      description,
+                      annotationId: targetAnnId,
+                      page: targetAnn.page,
+                      normX,
+                      normY,
+                      normW,
+                      normH,
+                    })
+                  )
+                );
 
-              const merged = history.annotations.map((ann) => {
-                if (ann.type !== "image" || ann.id !== targetAnnId)
-                  return ann;
-                const existing = Array.isArray(ann.images) ? ann.images : [];
-                const additions = uploads.map((u) => ({
-                  url: u.url,
-                  storageKey: u.storageKey || "",
-                  contentType: u.contentType || "",
+                const uploads: ProjectFilePhoto[] = [];
+                for (const result of results) {
+                  if (result.status === "fulfilled") uploads.push(result.value);
+                }
+
+                if (uploads.length) {
+                  const merged = history.annotationsRef.current.map((ann) => {
+                    if (ann.type !== "image" || ann.id !== targetAnnId)
+                      return ann;
+                    const existing = Array.isArray(ann.images) ? ann.images : [];
+                    const additions = uploads.map((u) => ({
+                      url: u.url,
+                      storageKey: u.storageKey || u.storagePath || "",
+                      contentType: u.contentType || u.mimeType || "",
+                    }));
+                    const nextDesc =
+                      (description || "").trim() ||
+                      ann.description ||
+                      ann.content ||
+                      "";
+                    return {
+                      ...ann,
+                      images: [...existing, ...additions],
+                      description: nextDesc,
+                      content: nextDesc,
+                      updatedAt: Date.now(),
+                    };
+                  });
+
+                  history.apply(merged, true);
+                  const ann = merged.find(
+                    (a) => a.type === "image" && a.id === targetAnnId
+                  ) as ImageAnnotation | undefined;
+                  if (ann) {
+                    controller.persistImageAnnotation(ann);
+                    setActiveImageAnnIdSafe(targetAnnId);
+                  }
+                }
+
+                const ok = uploads.length;
+                const total = results.length;
+                if (ok === total) {
+                  toast.success(
+                    total > 1 ? `${total} photos uploaded.` : "Photo uploaded.",
+                    { id: toastId }
+                  );
+                } else if (ok > 0) {
+                  toast.success(`${ok}/${total} uploaded. Some failed.`, {
+                    id: toastId,
+                  });
+                } else {
+                  toast.error("Upload failed. Please try again.", {
+                    id: toastId,
+                  });
+                }
+              } else {
+                const items = pictures.map((file, index) => ({
+                  file,
+                  placement: resolveImagePlacement(index),
+                  annId: makeImageId(),
                 }));
-                const nextDesc =
-                  (description || "").trim() ||
-                  ann.description ||
-                  ann.content ||
-                  "";
-                return {
-                  ...ann,
-                  images: [...existing, ...additions],
-                  description: nextDesc,
-                  content: nextDesc,
-                  updatedAt: Date.now(),
-                };
-              });
 
-              history.apply(merged, true);
+                const results = await Promise.allSettled(
+                  items.map((item) =>
+                    uploadProjectFilePhoto({
+                      projectId: project.id,
+                      pdfId: selectedFile.id,
+                      file: item.file,
+                      description,
+                      annotationId: item.annId,
+                      page: item.placement.pageIdx + 1,
+                      normX: item.placement.normX,
+                      normY: item.placement.normY,
+                      normW: item.placement.normW,
+                      normH: item.placement.normH,
+                    }).then((upload) => ({
+                      upload,
+                      placement: item.placement,
+                      annId: item.annId,
+                    }))
+                  )
+                );
 
-              // Persist marker meta (first image + note) for reload
-              const ann = merged.find(
-                (a) => a.type === "image" && a.id === targetAnnId
-              ) as ImageAnnotation | undefined;
-              if (ann) {
-                controller.persistImageAnnotation(ann);
+                const created: ImageAnnotation[] = [];
+                for (const result of results) {
+                  if (result.status !== "fulfilled") continue;
+                  created.push(
+                    buildImageAnnotation({
+                      id: result.value.annId,
+                      upload: result.value.upload,
+                      description,
+                      placement: result.value.placement,
+                    })
+                  );
+                }
+
+                if (created.length) {
+                  history.apply(
+                    [...history.annotationsRef.current, ...created],
+                    true
+                  );
+                  created.forEach((ann) =>
+                    controller.persistImageAnnotation(ann)
+                  );
+                  setActiveImageAnnIdSafe(created[created.length - 1].id);
+                }
+
+                const ok = created.length;
+                const total = results.length;
+                if (ok === total) {
+                  toast.success(
+                    total > 1 ? `${total} photos uploaded.` : "Photo uploaded.",
+                    { id: toastId }
+                  );
+                } else if (ok > 0) {
+                  toast.success(`${ok}/${total} uploaded. Some failed.`, {
+                    id: toastId,
+                  });
+                } else {
+                  toast.error("Upload failed. Please try again.", {
+                    id: toastId,
+                  });
+                }
               }
-
-              toast.success(
-                uploads.length > 1
-                  ? `${uploads.length} photos uploaded.`
-                  : "Photo uploaded.",
-                { id: toastId }
-              );
             } catch (err: any) {
               const code = err?.code || err?.message || "";
               const friendly = code.includes("permission-denied")
