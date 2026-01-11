@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import React, { forwardRef } from "react";
+import { createPortal } from "react-dom";
 
 import ProjectNotesSection from "../ProjectNotesSection";
 import SiteInspectionReportTemplate from "../SiteInspectionReportTemplate";
@@ -57,6 +58,8 @@ const DEFAULT_IMAGE_NORM_WIDTH = 0.25;
 const DEFAULT_IMAGE_NORM_HEIGHT = 0.2;
 const IMAGE_STAGGER_STEP = 0.05;
 const IMAGE_MAX_START = 0.8;
+const MODAL_BACKDROP_Z = 10000;
+const MODAL_CONTENT_Z = 10010;
 
 function makeImageId() {
   try {
@@ -1177,85 +1180,93 @@ const DocumentViewer = React.memo(
           }}
         />
 
-        {previewImage && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
-            role="dialog"
-            data-no-export="1"
-          >
-            <div className="relative w-full max-w-3xl rounded-lg bg-white p-4 shadow-xl">
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <div className="text-sm font-semibold text-gray-900">
-                      Image Marker
-                    </div>
-                    <div className="text-xs text-gray-600">
-                      {previewImage.description ||
-                        previewImage.content ||
-                        "No description"}
-                    </div>
-                  </div>
+        {previewImage && typeof document !== "undefined"
+          ? createPortal(
+              <div
+                className="fixed inset-0 flex items-center justify-center bg-black/60 p-4 pt-8 sm:p-6"
+                role="dialog"
+                aria-modal="true"
+                data-no-export="1"
+                style={{ zIndex: MODAL_BACKDROP_Z }}
+              >
+                <div
+                  className="relative w-full max-w-3xl rounded-lg bg-white p-4 shadow-xl max-h-[calc(100vh-48px)] overflow-y-auto"
+                  style={{ zIndex: MODAL_CONTENT_Z }}
+                >
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="text-sm font-semibold text-gray-900">
+                          Image Marker
+                        </div>
+                        <div className="text-xs text-gray-600">
+                          {previewImage.description ||
+                            previewImage.content ||
+                            "No description"}
+                        </div>
+                      </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className="rounded border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                      onClick={() => setPreviewImageAnnId(null)}
-                    >
-                      Close
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded border border-action px-3 py-1 text-xs text-action hover:bg-action/10"
-                      onClick={() => {
-                        const nextMode =
-                          previewImage.displayMode === "expanded"
-                            ? "icon"
-                            : "expanded";
-                        setImageDisplayMode(previewImage.id, nextMode);
-                        setActiveImageAnnIdSafe(previewImage.id);
-                        if (nextMode === "expanded") {
-                          setPreviewImageAnnId(null);
-                        }
-                      }}
-                    >
-                      {previewImage.displayMode === "expanded"
-                        ? "Collapse on page"
-                        : "Show on page"}
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded bg-action px-3 py-1 text-xs text-white hover:bg-action/90"
-                      onClick={() => {
-                        modalImageAnnIdRef.current = previewImage.id;
-                        setIsModalOpen(true);
-                        setPreviewImageAnnId(null);
-                      }}
-                    >
-                      Add/Replace Photos
-                    </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="rounded border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                          onClick={() => setPreviewImageAnnId(null)}
+                        >
+                          Close
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded border border-action px-3 py-1 text-xs text-action hover:bg-action/10"
+                          onClick={() => {
+                            const nextMode =
+                              previewImage.displayMode === "expanded"
+                                ? "icon"
+                                : "expanded";
+                            setImageDisplayMode(previewImage.id, nextMode);
+                            setActiveImageAnnIdSafe(previewImage.id);
+                            if (nextMode === "expanded") {
+                              setPreviewImageAnnId(null);
+                            }
+                          }}
+                        >
+                          {previewImage.displayMode === "expanded"
+                            ? "Collapse on page"
+                            : "Show on page"}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded bg-action px-3 py-1 text-xs text-white hover:bg-action/90"
+                          onClick={() => {
+                            modalImageAnnIdRef.current = previewImage.id;
+                            setIsModalOpen(true);
+                            setPreviewImageAnnId(null);
+                          }}
+                        >
+                          Add/Replace Photos
+                        </button>
+                      </div>
+                    </div>
+
+                    {previewImage.images?.[0]?.url ? (
+                      <div className="w-full overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={previewImage.images[0].url}
+                          alt={previewImage.description || "Photo"}
+                          className="w-full object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="rounded border border-dashed border-gray-200 p-4 text-sm text-gray-500">
+                        No image available.
+                      </div>
+                    )}
                   </div>
                 </div>
-
-                {previewImage.images?.[0]?.url ? (
-                  <div className="w-full overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={previewImage.images[0].url}
-                      alt={previewImage.description || "Photo"}
-                      className="w-full object-contain"
-                    />
-                  </div>
-                ) : (
-                  <div className="rounded border border-dashed border-gray-200 p-4 text-sm text-gray-500">
-                    No image available.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+              </div>,
+              document.getElementById("modal-root") || document.body
+            )
+          : null}
 
         <AddPicturesWithNotesModal
           isOpen={isModalOpen}
@@ -1512,3 +1523,4 @@ const DocumentViewer = React.memo(
 
 DocumentViewer.displayName = "DocumentViewer";
 export default DocumentViewer;
+    
