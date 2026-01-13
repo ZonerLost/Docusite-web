@@ -61,6 +61,7 @@ export function useExportProjectReport(
     const toastId = toast.loading("Generating report...");
     try {
       await ensureSignedIn();
+      // Export checklist: cover/summary + drawing pages + annotations + photo index/photos.
       const pages = await exportRef.current.exportPagesAsImages();
       if (!pages?.length) {
         throw new Error("No pages available to export.");

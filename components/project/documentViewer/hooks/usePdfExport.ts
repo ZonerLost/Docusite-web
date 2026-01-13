@@ -79,18 +79,20 @@ function getPageNumberFromElement(el: HTMLElement, fallback: number): number {
 export function usePdfExport(args: {
   domRef: React.RefObject<HTMLDivElement>;
   pdfScrollEl: HTMLDivElement | null;
+  exportRootRef?: React.RefObject<HTMLDivElement>;
+  exportScrollEl?: HTMLDivElement | null;
   annotations: Annotation[];
   editingAnnotationId: string | null;
 }) {
-  const { domRef, pdfScrollEl, annotations } = args;
+  const { domRef, pdfScrollEl, exportRootRef, exportScrollEl, annotations } = args;
 
   const exportPagesAsImages = React.useCallback(async (): Promise<ExportedImage[]> => {
-    const root = domRef.current;
+    const root = exportRootRef?.current || domRef.current;
     if (!root) return [];
 
     const { default: html2canvas } = await import("html2canvas");
 
-    const scroller = pdfScrollEl;
+    const scroller = exportRootRef?.current ? exportScrollEl : pdfScrollEl;
 
     const prevOverflow = scroller ? scroller.style.overflow : "";
     const prevHeight = scroller ? scroller.style.height : "";
@@ -141,30 +143,30 @@ export function usePdfExport(args: {
       await raf();
       await raf();
 
+      const exportPages = Array.from(
+        root.querySelectorAll('[data-export-page="true"]')
+      ) as HTMLElement[];
       const containerForPages: Element = scroller || root;
-      const pageEls = findPdfPageElements(containerForPages);
+      const pageEls = exportPages.length
+        ? uniqInDomOrder(exportPages)
+        : findPdfPageElements(containerForPages);
+      if (!pageEls.length) {
+        console.warn("[export] no PDF page wrappers found for capture");
+      }
 
       // scale for sharp printing (but keep safe)
       const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-      const scale = Math.min(3, Math.max(2, dpr)); // ✅ good for printing
+      const scale = Math.min(3, Math.max(2, dpr));
 
-      // ✅ BEST: per-page crop from ROOT (captures overlays!)
+      // capture each page wrapper
       if (pageEls.length) {
         const out: ExportedImage[] = [];
-        const rootRect = root.getBoundingClientRect();
 
         for (let index = 0; index < pageEls.length; index++) {
           const pageEl = pageEls[index];
           await raf();
 
-          const pr = pageEl.getBoundingClientRect();
-
-          const cropX = Math.max(0, pr.left - rootRect.left);
-          const cropY = Math.max(0, pr.top - rootRect.top);
-          const cropW = Math.max(1, pr.width);
-          const cropH = Math.max(1, pr.height);
-
-          const canvas = await html2canvas(root, {
+          const canvas = await html2canvas(pageEl, {
             backgroundColor: "#ffffff",
             scale,
             useCORS: true,
@@ -172,16 +174,6 @@ export function usePdfExport(args: {
             scrollX: 0,
             scrollY: 0,
             ignoreElements,
-
-            // ✅ crop region
-            x: cropX,
-            y: cropY,
-            width: cropW,
-            height: cropH,
-
-            // keep stable sizing even if viewport is smaller
-            windowWidth: Math.max(root.scrollWidth, window.innerWidth),
-            windowHeight: Math.max(root.scrollHeight, window.innerHeight),
           });
 
           // JPEG keeps payload smaller while remaining crisp enough for export.
@@ -231,7 +223,7 @@ export function usePdfExport(args: {
       // cleanup style
       if (headStyle.parentNode) headStyle.parentNode.removeChild(headStyle);
     }
-  }, [domRef, pdfScrollEl, annotations]);
+  }, [domRef, pdfScrollEl, exportRootRef, exportScrollEl, annotations]);
 
   return { exportPagesAsImages };
 }

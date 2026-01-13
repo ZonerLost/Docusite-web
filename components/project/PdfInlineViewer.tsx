@@ -15,6 +15,15 @@ type Props = {
   height?: number | string;
   // Provide the scroll container to parent so it can anchor overlays to PDF content
   onContainerRef?: (el: HTMLDivElement | null) => void;
+  exportMode?: boolean;
+  onDocumentLoadSuccess?: (numPages: number) => void;
+  onPageRender?: (pageNumber: number) => void;
+  renderPageOverlay?: (args: {
+    pageIndex: number;
+    pageNumber: number;
+    width: number;
+    height: number;
+  }) => React.ReactNode;
 };
 
 function stripQuery(url: string) {
@@ -28,6 +37,10 @@ const PdfInlineViewer = React.memo(function PdfInlineViewer({
   onClose,
   height = "100%",
   onContainerRef,
+  exportMode = false,
+  onDocumentLoadSuccess,
+  onPageRender,
+  renderPageOverlay,
 }: Props) {
   const INITIAL_PAGE_COUNT = 6;
   const PAGE_BATCH = 6;
@@ -36,6 +49,7 @@ const PdfInlineViewer = React.memo(function PdfInlineViewer({
   const [error, setError] = React.useState<string | null>(null);
   const [reloadTick, setReloadTick] = React.useState(0);
   const [visiblePages, setVisiblePages] = React.useState(INITIAL_PAGE_COUNT);
+  const [pageDims, setPageDims] = React.useState<Record<number, { width: number; height: number }>>({});
 
   const [iframeSrc, setIframeSrc] = React.useState<string | null>(null);
   const [proxiedUrl, setProxiedUrl] = React.useState<string | null>(null);
@@ -123,6 +137,7 @@ const PdfInlineViewer = React.memo(function PdfInlineViewer({
       setLoading(true);
       setError(null);
       setNumPages(0);
+      setPageDims({});
       setVisiblePages(INITIAL_PAGE_COUNT);
 
       const base = stripQuery(fileUrl);
@@ -148,7 +163,7 @@ const PdfInlineViewer = React.memo(function PdfInlineViewer({
       try {
         const fresh = await resolveFirebaseDownloadUrl(fileUrl);
 
-        const preview = buildDrivePreview(fresh);
+        const preview = exportMode ? null : buildDrivePreview(fresh);
         if (preview) {
           if (!cancelled) {
             lastBaseRef.current = base;
@@ -225,7 +240,8 @@ const PdfInlineViewer = React.memo(function PdfInlineViewer({
               }
               onLoadSuccess={(info: { numPages: number }) => {
                 setNumPages(info.numPages);
-                setVisiblePages(Math.min(info.numPages, INITIAL_PAGE_COUNT));
+                setVisiblePages(exportMode ? info.numPages : Math.min(info.numPages, INITIAL_PAGE_COUNT));
+                onDocumentLoadSuccess?.(info.numPages);
               }}
               onLoadError={(e: any) =>
                 setError(e?.message || "Failed to load PDF")
@@ -242,6 +258,7 @@ const PdfInlineViewer = React.memo(function PdfInlineViewer({
                       data-pdf-page="true"
                       data-page-index={i}
                       data-page-number={i + 1}
+                      data-export-page={exportMode ? "true" : undefined}
                       className="relative flex w-full justify-center overflow-hidden"
                     >
                       <Page
@@ -250,13 +267,40 @@ const PdfInlineViewer = React.memo(function PdfInlineViewer({
                         renderAnnotationLayer={false}
                         renderTextLayer={false}
                         className="pdf-page"
+                        onRenderSuccess={(page: any) => {
+                          if (renderPageOverlay) {
+                            try {
+                              const viewport = page?.getViewport?.({ scale: 1 });
+                              const height =
+                                viewport?.width && viewport?.height
+                                  ? Math.round(pageWidth * (viewport.height / viewport.width))
+                                  : Math.round(pageWidth * 1.294);
+                              setPageDims((prev) =>
+                                prev[i + 1]?.width === pageWidth && prev[i + 1]?.height === height
+                                  ? prev
+                                  : { ...prev, [i + 1]: { width: pageWidth, height } }
+                              );
+                            } catch {}
+                          }
+                          onPageRender?.(i + 1);
+                        }}
                       />
+                      {renderPageOverlay && pageDims[i + 1] ? (
+                        <div className="absolute inset-0 pointer-events-none">
+                          {renderPageOverlay({
+                            pageIndex: i,
+                            pageNumber: i + 1,
+                            width: pageDims[i + 1].width,
+                            height: pageDims[i + 1].height,
+                          })}
+                        </div>
+                      ) : null}
                     </div>
                   )
                 )}
               </div>
             </Document>
-            {numPages > visiblePages && (
+            {!exportMode && numPages > visiblePages && (
               <div className="flex justify-center pb-4">
                 <button
                   type="button"

@@ -24,6 +24,7 @@ import type {
   ProjectFilePhoto,
   ReportAnnotation,
   ImageAnnotation,
+  PageRect,
   PhotoMarkerMode,
 } from "./types";
 import { usePdfOverlayMetrics } from "./hooks/usePdfOverlayMetrics";
@@ -102,6 +103,13 @@ const DocumentViewer = React.memo(
       setActiveImageAnnId(id);
     }, []);
     const [exportMode, setExportMode] = React.useState(false);
+    const exportDomRef = React.useRef<HTMLDivElement>(null);
+    const [exportScrollEl, setExportScrollEl] = React.useState<HTMLDivElement | null>(null);
+    const exportRenderRef = React.useRef<{ numPages: number; rendered: Set<number> }>({
+      numPages: 0,
+      rendered: new Set(),
+    });
+    const [exportContainerWidth, setExportContainerWidth] = React.useState(900);
     const [isModalOpen, setIsModalOpen] = React.useState(false);
     const [previewImageAnnId, setPreviewImageAnnId] = React.useState<string | null>(null);
     const lastPointerRef = React.useRef<{
@@ -595,6 +603,71 @@ const DocumentViewer = React.memo(
       [history.annotations]
     );
 
+    const exportClientToCanvasPoint = React.useCallback((e: any) => {
+      return {
+        xCanvasPx: Number(e?.clientX || 0),
+        yCanvasPx: Number(e?.clientY || 0),
+      };
+    }, []);
+
+    const handleExportDocumentLoad = React.useCallback((numPages: number) => {
+      exportRenderRef.current = { numPages, rendered: new Set() };
+    }, []);
+
+    const handleExportPageRender = React.useCallback((pageNumber: number) => {
+      exportRenderRef.current.rendered.add(pageNumber);
+    }, []);
+
+    const renderExportPageOverlay = React.useCallback(
+      (args: { pageNumber: number; width: number; height: number }) => {
+        const pageNumber = args.pageNumber;
+        const pageRects = [] as PageRect[];
+        pageRects[pageNumber - 1] = {
+          left: 0,
+          top: 0,
+          width: args.width,
+          height: args.height,
+        };
+
+        const pageImages = imageAnnotations.filter((a) => (a.page || 1) === pageNumber);
+        const pageNotes = displayAnnotations.filter((a) => (a.page || 1) === pageNumber);
+
+        return (
+          <div className="absolute inset-0">
+            <ImageAnnotationLayer
+              annotations={pageImages}
+              pageRects={pageRects}
+              pdfContentOffset={{ left: 0, top: 0 }}
+              pdfScroll={{ left: 0, top: 0 }}
+              domRef={exportDomRef}
+              clientToCanvasPoint={exportClientToCanvasPoint}
+              exportMode
+              onOpen={() => undefined}
+              onUpdate={() => undefined}
+              onCommit={() => undefined}
+            />
+            <AnnotationLayer
+              annotations={pageNotes}
+              pageRects={pageRects}
+              pdfContentOffset={{ left: 0, top: 0 }}
+              pdfScroll={{ left: 0, top: 0 }}
+              editingAnnotationId={null}
+              setEditingAnnotationId={() => undefined}
+              draggingAnnotationId={null}
+              resizingAnnotationId={null}
+              onDelete={() => undefined}
+              onUpdate={() => undefined}
+              onCommit={() => undefined}
+              onSaveImmediate={() => undefined}
+              onScheduleDebounced={() => undefined}
+              setDraggingNote={() => undefined}
+            />
+          </div>
+        );
+      },
+      [displayAnnotations, exportClientToCanvasPoint, exportDomRef, exportMode, imageAnnotations]
+    );
+
     const previewImage = React.useMemo(() => {
       if (!previewImageAnnId) return null;
       return imageAnnotations.find((a) => a.id === previewImageAnnId) || null;
@@ -757,6 +830,8 @@ const DocumentViewer = React.memo(
     const exporter = usePdfExport({
       domRef,
       pdfScrollEl: overlay.pdfScrollEl,
+      exportRootRef: exportDomRef,
+      exportScrollEl,
       annotations: history.annotations,
       editingAnnotationId: controller.editingAnnotationId,
     });
@@ -971,26 +1046,21 @@ const DocumentViewer = React.memo(
         controller.setEditingAnnotationId(null);
         noteSync.forceSaveAll();
 
-        const shouldForcePdf = activeTab === "view" && !showPdf && !!fileUrl;
-        if (shouldForcePdf) setShowPdf(true);
+        exportRenderRef.current = { numPages: 0, rendered: new Set() };
+        setExportContainerWidth(domRef.current?.clientWidth || 900);
 
         setExportMode(true);
         try {
-          const waitForPdfPages = async () => {
-            const root = domRef.current;
-            if (!root) return;
-            const selectors = [
-              '[data-pdf-page="true"]',
-              "[data-page-number]",
-              "[data-page-index]",
-              ".react-pdf__Page",
-              ".pdf-page",
-              ".page",
-            ];
-            const hasPage = () => selectors.some((sel) => root.querySelector(sel));
-            const maxFrames = 90;
-            for (let i = 0; i < maxFrames; i++) {
-              if (hasPage()) return;
+          const waitForExportReady = async () => {
+            const timeoutMs = 10000;
+            const start = Date.now();
+
+            while (true) {
+              const { numPages, rendered } = exportRenderRef.current;
+              if (numPages > 0 && rendered.size >= numPages) return;
+              if (Date.now() - start > timeoutMs) {
+                throw new Error("Export timed out waiting for PDF pages to render.");
+              }
               await new Promise((resolve) =>
                 requestAnimationFrame(() => resolve(null))
               );
@@ -1004,11 +1074,13 @@ const DocumentViewer = React.memo(
           await new Promise((resolve) =>
             requestAnimationFrame(() => resolve(null))
           );
-          await waitForPdfPages();
+          await waitForExportReady();
+          await new Promise((resolve) =>
+            requestAnimationFrame(() => resolve(null))
+          );
           return await exporter.exportPagesAsImages();
         } finally {
           setExportMode(false);
-          if (shouldForcePdf) setShowPdf(false);
         }
       },
     }));
@@ -1185,6 +1257,34 @@ const DocumentViewer = React.memo(
             `}</style>
           </div>
         </div>
+
+        {exportMode && fileUrl ? (
+          <div
+            ref={exportDomRef}
+            data-exporting="1"
+            className="pointer-events-none"
+            style={{
+              position: "fixed",
+              left: "-10000px",
+              top: 0,
+              opacity: 0,
+              width: exportContainerWidth,
+              zIndex: -1,
+            }}
+          >
+            <PdfViewer
+              fileUrl={fileUrl}
+              height={1200}
+              onContainerRef={setExportScrollEl}
+              exportMode
+              onDocumentLoadSuccess={handleExportDocumentLoad}
+              onPageRender={handleExportPageRender}
+              renderPageOverlay={({ pageNumber, width, height }) =>
+                renderExportPageOverlay({ pageNumber, width, height })
+              }
+            />
+          </div>
+        ) : null}
 
         <FileCategoryModal
           open={fileListOpen && !!fileListCategory}
