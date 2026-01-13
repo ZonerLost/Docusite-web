@@ -967,12 +967,36 @@ const DocumentViewer = React.memo(
       domRef: domRef.current,
 
       exportPagesAsImages: async () => {
-        // ✅ close editing + flush note saves before capturing
+        // ? close editing + flush note saves before capturing
         controller.setEditingAnnotationId(null);
         noteSync.forceSaveAll();
 
+        const shouldForcePdf = activeTab === "view" && !showPdf && !!fileUrl;
+        if (shouldForcePdf) setShowPdf(true);
+
         setExportMode(true);
         try {
+          const waitForPdfPages = async () => {
+            const root = domRef.current;
+            if (!root) return;
+            const selectors = [
+              '[data-pdf-page="true"]',
+              "[data-page-number]",
+              "[data-page-index]",
+              ".react-pdf__Page",
+              ".pdf-page",
+              ".page",
+            ];
+            const hasPage = () => selectors.some((sel) => root.querySelector(sel));
+            const maxFrames = 90;
+            for (let i = 0; i < maxFrames; i++) {
+              if (hasPage()) return;
+              await new Promise((resolve) =>
+                requestAnimationFrame(() => resolve(null))
+              );
+            }
+          };
+
           // give DOM two frames to apply styles + blur
           await new Promise((resolve) =>
             requestAnimationFrame(() => resolve(null))
@@ -980,9 +1004,11 @@ const DocumentViewer = React.memo(
           await new Promise((resolve) =>
             requestAnimationFrame(() => resolve(null))
           );
+          await waitForPdfPages();
           return await exporter.exportPagesAsImages();
         } finally {
           setExportMode(false);
+          if (shouldForcePdf) setShowPdf(false);
         }
       },
     }));

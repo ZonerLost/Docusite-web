@@ -24,7 +24,10 @@ type Props = {
   exportMode?: boolean;
   onOpen: (id: string) => void;
   onUpdate: (updater: (prev: Annotation[]) => Annotation[]) => void;
-  onCommit: (updater: (prev: Annotation[]) => Annotation[], updatedId: string) => void;
+  onCommit: (
+    updater: (prev: Annotation[]) => Annotation[],
+    updatedId: string
+  ) => void;
 };
 
 const MARKER_PX = 32;
@@ -41,8 +44,10 @@ type CanvasPointInput = {
 type LeftTopLike = { left?: number; top?: number; x?: number; y?: number };
 
 function getLeftTop(v: LeftTopLike | null | undefined) {
-  const left = typeof v?.left === "number" ? v.left : typeof v?.x === "number" ? v.x : 0;
-  const top = typeof v?.top === "number" ? v.top : typeof v?.y === "number" ? v.y : 0;
+  const left =
+    typeof v?.left === "number" ? v.left : typeof v?.x === "number" ? v.x : 0;
+  const top =
+    typeof v?.top === "number" ? v.top : typeof v?.y === "number" ? v.y : 0;
   return { left, top };
 }
 
@@ -211,12 +216,11 @@ export default function ImageAnnotationLayer({
         const clampedY = Math.max(0, Math.min(1 - normH, normY));
 
         const hasImage = (a.images?.length || 0) > 0;
-        const displayMode =
-          exportMode
-            ? "icon"
-            : a.displayMode === "expanded"
-            ? "expanded"
-            : "icon";
+        const displayMode = exportMode
+          ? "icon"
+          : a.displayMode === "expanded"
+          ? "expanded"
+          : "icon";
         const isExpanded = displayMode === "expanded" && hasImage;
 
         const markerNormW = MARKER_PX / Math.max(1, pageRect.width);
@@ -235,10 +239,16 @@ export default function ImageAnnotationLayer({
         const width = displayNormW * pageRect.width;
         const height = displayNormH * pageRect.height;
 
-        const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+        const handlePointerDown = (
+          e: React.PointerEvent<HTMLButtonElement>
+        ) => {
           if (exportMode) return;
           if (e.pointerType === "mouse" && e.button !== 0) return;
-          if ((e.target as HTMLElement | null)?.closest?.("[data-resize-handle=\"1\"]")) {
+          if (
+            (e.target as HTMLElement | null)?.closest?.(
+              '[data-resize-handle="1"]'
+            )
+          ) {
             return;
           }
           e.preventDefault();
@@ -251,8 +261,8 @@ export default function ImageAnnotationLayer({
           const localX = xCanvasPx - pageRect.left;
           const localY = yCanvasPx - pageRect.top;
 
-        const annLeftPx = clampedDisplayX * pageRect.width;
-        const annTopPx = clampedDisplayY * pageRect.height;
+          const annLeftPx = clampedDisplayX * pageRect.width;
+          const annTopPx = clampedDisplayY * pageRect.height;
 
           dragRef.current = {
             id: a.id,
@@ -275,9 +285,12 @@ export default function ImageAnnotationLayer({
           } catch {}
         };
 
-        const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+        const handlePointerMove = (
+          e: React.PointerEvent<HTMLButtonElement>
+        ) => {
           const drag = dragRef.current;
-          if (!drag || drag.id !== a.id || drag.pointerId !== e.pointerId) return;
+          if (!drag || drag.id !== a.id || drag.pointerId !== e.pointerId)
+            return;
 
           e.preventDefault();
           e.stopPropagation();
@@ -297,10 +310,13 @@ export default function ImageAnnotationLayer({
           drag.hasMoved = true;
 
           let nextNormX = (localX - drag.offsetX) / Math.max(1, pageRect.width);
-          let nextNormY = (localY - drag.offsetY) / Math.max(1, pageRect.height);
+          let nextNormY =
+            (localY - drag.offsetY) / Math.max(1, pageRect.height);
 
-          const clampW = drag.mode === "icon" ? drag.displayNormW : drag.persistNormW;
-          const clampH = drag.mode === "icon" ? drag.displayNormH : drag.persistNormH;
+          const clampW =
+            drag.mode === "icon" ? drag.displayNormW : drag.persistNormW;
+          const clampH =
+            drag.mode === "icon" ? drag.displayNormH : drag.persistNormH;
           nextNormX = Math.max(0, Math.min(1 - clampW, nextNormX));
           nextNormY = Math.max(0, Math.min(1 - clampH, nextNormY));
 
@@ -319,7 +335,8 @@ export default function ImageAnnotationLayer({
 
         const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
           const drag = dragRef.current;
-          if (!drag || drag.id !== a.id || drag.pointerId !== e.pointerId) return;
+          if (!drag || drag.id !== a.id || drag.pointerId !== e.pointerId)
+            return;
 
           e.preventDefault();
           e.stopPropagation();
@@ -339,10 +356,13 @@ export default function ImageAnnotationLayer({
           const localY = yCanvasPx - pageRect.top;
 
           let nextNormX = (localX - drag.offsetX) / Math.max(1, pageRect.width);
-          let nextNormY = (localY - drag.offsetY) / Math.max(1, pageRect.height);
+          let nextNormY =
+            (localY - drag.offsetY) / Math.max(1, pageRect.height);
 
-          const clampW = drag.mode === "icon" ? drag.displayNormW : drag.persistNormW;
-          const clampH = drag.mode === "icon" ? drag.displayNormH : drag.persistNormH;
+          const clampW =
+            drag.mode === "icon" ? drag.displayNormW : drag.persistNormW;
+          const clampH =
+            drag.mode === "icon" ? drag.displayNormH : drag.persistNormH;
           nextNormX = Math.max(0, Math.min(1 - clampW, nextNormX));
           nextNormY = Math.max(0, Math.min(1 - clampH, nextNormY));
 
@@ -387,7 +407,8 @@ export default function ImageAnnotationLayer({
         const handleResizeMove = (e: React.PointerEvent<HTMLSpanElement>) => {
           if (!isExpanded) return;
           const resize = resizeRef.current;
-          if (!resize || resize.id !== a.id || resize.pointerId !== e.pointerId) return;
+          if (!resize || resize.id !== a.id || resize.pointerId !== e.pointerId)
+            return;
 
           e.preventDefault();
           e.stopPropagation();
@@ -408,16 +429,29 @@ export default function ImageAnnotationLayer({
           let nextNormW = clamp01(nextPxW / Math.max(1, pageRect.width));
           let nextNormH = clamp01(nextPxH / Math.max(1, pageRect.height));
 
-          if (resize.normX + nextNormW > 1) nextNormW = Math.max(0.02, 1 - resize.normX);
-          if (resize.normY + nextNormH > 1) nextNormH = Math.max(0.02, 1 - resize.normY);
+          if (resize.normX + nextNormW > 1)
+            nextNormW = Math.max(0.02, 1 - resize.normX);
+          if (resize.normY + nextNormH > 1)
+            nextNormH = Math.max(0.02, 1 - resize.normY);
 
-          onUpdate(buildUpdater(a.id, pageIdx, resize.normX, resize.normY, nextNormW, nextNormH, pageRect));
+          onUpdate(
+            buildUpdater(
+              a.id,
+              pageIdx,
+              resize.normX,
+              resize.normY,
+              nextNormW,
+              nextNormH,
+              pageRect
+            )
+          );
         };
 
         const handleResizeUp = (e: React.PointerEvent<HTMLSpanElement>) => {
           if (!isExpanded) return;
           const resize = resizeRef.current;
-          if (!resize || resize.id !== a.id || resize.pointerId !== e.pointerId) return;
+          if (!resize || resize.id !== a.id || resize.pointerId !== e.pointerId)
+            return;
 
           e.preventDefault();
           e.stopPropagation();
@@ -440,10 +474,23 @@ export default function ImageAnnotationLayer({
           let nextNormW = clamp01(nextPxW / Math.max(1, pageRect.width));
           let nextNormH = clamp01(nextPxH / Math.max(1, pageRect.height));
 
-          if (resize.normX + nextNormW > 1) nextNormW = Math.max(0.02, 1 - resize.normX);
-          if (resize.normY + nextNormH > 1) nextNormH = Math.max(0.02, 1 - resize.normY);
+          if (resize.normX + nextNormW > 1)
+            nextNormW = Math.max(0.02, 1 - resize.normX);
+          if (resize.normY + nextNormH > 1)
+            nextNormH = Math.max(0.02, 1 - resize.normY);
 
-          onCommit(buildUpdater(a.id, pageIdx, resize.normX, resize.normY, nextNormW, nextNormH, pageRect), a.id);
+          onCommit(
+            buildUpdater(
+              a.id,
+              pageIdx,
+              resize.normX,
+              resize.normY,
+              nextNormW,
+              nextNormH,
+              pageRect
+            ),
+            a.id
+          );
         };
 
         return (
@@ -483,8 +530,12 @@ export default function ImageAnnotationLayer({
                 />
               </>
             ) : (
-              <span className="pdf-camera-ui inline-flex h-8 w-8 items-center justify-center rounded-full">
-                <Camera className="h-4 w-4 text-gray-500" />
+              <span
+                className="pdf-camera-ui inline-flex h-8 w-8 items-center justify-center rounded-full
+             bg-blue-600 shadow-md ring-2 ring-white/70"
+                aria-label="Photo marker"
+              >
+                <Camera className="h-4 w-4 text-white" />
               </span>
             )}
           </button>
