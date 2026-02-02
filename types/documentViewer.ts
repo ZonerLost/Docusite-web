@@ -17,4 +17,7 @@ export type DocumentViewerHandle = {
   openFullScreen: () => void;
   closeFullScreen: () => void;
   toggleFullScreen?: (next?: boolean) => void;
+  openCompleteView?: () => void;
+  closeCompleteView?: () => void;
+  toggleCompleteView?: (next?: boolean) => void;
 };

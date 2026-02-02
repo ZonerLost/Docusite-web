@@ -5,9 +5,7 @@ import { Document, Page, pdfjs } from "react-pdf";
 import { storage } from "@/lib/firebase-client";
 import { ref as storageRef, getDownloadURL } from "firebase/storage";
 
-const pdfjsMajor = Number(String(pdfjs.version).split(".")[0] || 0);
-const workerExt = pdfjsMajor >= 4 ? "mjs" : "js";
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.${workerExt}`;
+pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 type Props = {
   fileUrl: string;
@@ -24,7 +22,8 @@ type Props = {
     width: number;
     height: number;
   }) => React.ReactNode;
-  showHeader?: boolean;
+  hideHeader?: boolean;
+  headerActions?: React.ReactNode;
 };
 
 function stripQuery(url: string) {
@@ -42,7 +41,8 @@ const PdfInlineViewer = React.memo(function PdfInlineViewer({
   onDocumentLoadSuccess,
   onPageRender,
   renderPageOverlay,
-  showHeader = true,
+  hideHeader = false,
+  headerActions,
 }: Props) {
   const INITIAL_PAGE_COUNT = 6;
   const PAGE_BATCH = 6;
@@ -61,7 +61,7 @@ const PdfInlineViewer = React.memo(function PdfInlineViewer({
   // Responsive page width
   const [pageWidth, setPageWidth] = React.useState<number>(900);
 
-  const docOptions = React.useMemo(
+  const documentOptions = React.useMemo(
     () => ({ disableRange: true, disableStream: true }),
     []
   );
@@ -200,18 +200,21 @@ const PdfInlineViewer = React.memo(function PdfInlineViewer({
     height: typeof height === "number" ? `${height}px` : height,
   };
 
-  const containerClasses = showHeader
-    ? "flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-border-gray bg-white shadow-sm"
-    : "flex h-full min-h-0 w-full flex-col overflow-hidden bg-white";
+  const containerClasses = hideHeader
+    ? "flex h-full min-h-0 w-full flex-col overflow-hidden bg-white"
+    : "flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-border-gray bg-white shadow-sm";
 
   return (
     <div
       className={containerClasses}
       style={containerStyle}
     >
-      {showHeader && (
+      {!hideHeader && (
         <div className="relative z-20 flex shrink-0 items-center justify-between border-b border-border-gray px-3 py-2">
-          <span className="text-sm font-medium text-black">PDF Preview</span>
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-black">PDF Preview</span>
+            {headerActions}
+          </div>
           {onClose && (
             <button
               type="button"
@@ -255,7 +258,7 @@ const PdfInlineViewer = React.memo(function PdfInlineViewer({
                 setError(e?.message || "Failed to load PDF")
               }
               renderMode="canvas"
-              options={docOptions}
+              options={documentOptions}
             >
               <div className="flex flex-col items-center gap-4 py-4">
                 {Array.from(

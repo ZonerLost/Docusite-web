@@ -1,73 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-// ===== TEMP DISABLED: imports used only for editing =====
-// import Button from '@/components/ui/Button';
-// import { db } from '@/lib/firebase-client';
-// import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
-// import { toast } from 'react-hot-toast';
-
 const TermsTab: React.FC = () => {
-  // ===== TEMP DISABLED: state used only for editing =====
-  // const [isEditing, setIsEditing] = useState(false);
-  // const [isSaving, setIsSaving] = useState(false);
-
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('N/A');
 
   useEffect(() => {
     setLastUpdated(new Date().toLocaleDateString());
   }, []);
-
-  // ===== TEMP DISABLED: edit handlers =====
-  // const onToggleEdit = useCallback(() => {
-  //   setIsEditing((v) => !v);
-  //   // Focus content area when entering edit mode
-  //   setTimeout(() => {
-  //     if (!isEditing && contentRef.current) {
-  //       try { contentRef.current.focus(); } catch {}
-  //     }
-  //   }, 0);
-  // }, [isEditing]);
-
-  // const onSave = useCallback(async () => {
-  //   if (!contentRef.current) return;
-  //   const html = contentRef.current.innerHTML || '';
-  //   try {
-  //     setIsSaving(true);
-  //     await setDoc(
-  //       doc(db, 'app_policies', 'terms_and_conditions'),
-  //       { html, updatedAt: serverTimestamp() as any },
-  //       { merge: true }
-  //     );
-  //     toast.success('Terms & Conditions updated');
-  //     setIsEditing(false);
-  //   } catch (e: any) {
-  //     console.error('[TermsTab] Failed to update terms', e);
-  //     const msg = typeof e?.message === 'string' ? e.message : 'Failed to update terms';
-  //     toast.error(msg);
-  //   } finally {
-  //     setIsSaving(false);
-  //   }
-  // }, []);
-
   return (
     <div className="space-y-4 w-full">
       <div className="border border-border-gray shadow-sm rounded-xl">
         <div className="p-6 space-y-6">
-          {/* ===== TEMP DISABLED: Edit button toolbar =====
-          <div className="flex items-center justify-end">
-            <Button
-              variant={isEditing ? 'primary' : 'outline'}
-              size="sm"
-              onClick={isEditing ? onSave : onToggleEdit}
-              disabled={isSaving}
-              aria-label={isEditing ? 'Save & Update' : 'Edit'}
-              title={isEditing ? 'Save & Update' : 'Edit'}
-            >
-              {isEditing ? (isSaving ? 'Saving…' : 'Save & Update') : 'Edit'}
-            </Button>
-          </div>
-          ===== /TEMP DISABLED ===== */}
-
           <div
             ref={contentRef}
             // View-only for now:

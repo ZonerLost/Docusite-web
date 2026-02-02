@@ -208,7 +208,10 @@ export default function ProjectDetailsScreen({ projectId }: Props) {
         penColor={penColor}
         penSize={penSize}
         onPenSettingsChange={handlePenSettingsChange}
-        onOpenFullView={() => exportRef.current?.openFullScreen()}
+        onOpenFullView={() =>
+          exportRef.current?.openCompleteView?.() ??
+          exportRef.current?.openFullScreen?.()
+        }
         disableFullView={!selectedFile || !fileUrl}
       />
 
@@ -219,6 +222,7 @@ export default function ProjectDetailsScreen({ projectId }: Props) {
           selectedFile={selectedFile}
           notes={notes}
           selectedTool={selectedTool}
+          onToolSelect={handleToolSelect}
           activeTab={activeTab}
           onAddNote={handleOpenAddNotes}
           onAddImageNote={handleOpenAddPictures}

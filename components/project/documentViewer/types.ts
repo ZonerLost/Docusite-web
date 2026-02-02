@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
 export type StoredProject = {
   id: string;
@@ -155,6 +156,7 @@ export type DocumentViewerProps = {
   selectedFile?: { id: string; name: string; category?: string } | null;
   notes: string[];
   selectedTool: SelectedTool | null;
+  onToolSelect?: (tool: SelectedTool | null) => void;
   activeTab: ActiveTab;
   onAddNote: () => void;
   onAddImageNote: () => void;
@@ -163,6 +165,8 @@ export type DocumentViewerProps = {
   onSelectFile?: (file: { id: string; name: string; category?: string }) => void;
   penColor?: PenColor;
   penSize?: PenSize;
+   onPenSettingsChange?: (cfg: { color?: PenColor; size?: PenSize }) => void;
+  completeViewToolbar?: ReactNode;
 };
 
 export type { DocumentViewerHandle } from "@/types/documentViewer";
