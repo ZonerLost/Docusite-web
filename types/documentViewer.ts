@@ -14,4 +14,7 @@ export type DocumentViewerHandle = {
   addImagesWithUpload?: (files: File[], note: string) => Promise<void> | void;
   openCategory?: (name: string) => void;
   addNoteAnnotation?: (text: string, x?: number, y?: number) => void;
+  openFullScreen: () => void;
+  closeFullScreen: () => void;
+  toggleFullScreen?: (next?: boolean) => void;
 };

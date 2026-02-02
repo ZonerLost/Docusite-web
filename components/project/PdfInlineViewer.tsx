@@ -24,6 +24,7 @@ type Props = {
     width: number;
     height: number;
   }) => React.ReactNode;
+  showHeader?: boolean;
 };
 
 function stripQuery(url: string) {
@@ -41,6 +42,7 @@ const PdfInlineViewer = React.memo(function PdfInlineViewer({
   onDocumentLoadSuccess,
   onPageRender,
   renderPageOverlay,
+  showHeader = true,
 }: Props) {
   const INITIAL_PAGE_COUNT = 6;
   const PAGE_BATCH = 6;
@@ -198,23 +200,29 @@ const PdfInlineViewer = React.memo(function PdfInlineViewer({
     height: typeof height === "number" ? `${height}px` : height,
   };
 
+  const containerClasses = showHeader
+    ? "flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-border-gray bg-white shadow-sm"
+    : "flex h-full min-h-0 w-full flex-col overflow-hidden bg-white";
+
   return (
     <div
-      className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-border-gray bg-white shadow-sm"
+      className={containerClasses}
       style={containerStyle}
     >
-      <div className="relative z-20 flex shrink-0 items-center justify-between border-b border-border-gray px-3 py-2">
-        <span className="text-sm font-medium text-black">PDF Preview</span>
-        {onClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-sm text-action hover:text-action/80"
-          >
-            Close
-          </button>
-        )}
-      </div>
+      {showHeader && (
+        <div className="relative z-20 flex shrink-0 items-center justify-between border-b border-border-gray px-3 py-2">
+          <span className="text-sm font-medium text-black">PDF Preview</span>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-sm text-action hover:text-action/80"
+            >
+              Close
+            </button>
+          )}
+        </div>
+      )}
 
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto">
         {loading ? (

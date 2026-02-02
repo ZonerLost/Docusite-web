@@ -43,6 +43,8 @@ type Props = {
   onAddImageNote?: () => void;
   onAddPicturesWithDescription?: (files: File[], description: string) => void;
   onAddNote: () => void;
+  onOpenFullView?: () => void;
+  disableFullView?: boolean;
 };
 
 export default function DocumentViewerHeader(props: Props) {
@@ -78,6 +80,8 @@ export default function DocumentViewerHeader(props: Props) {
     onAddImageNote,
     onAddPicturesWithDescription,
     onAddNote,
+    onOpenFullView,
+    disableFullView,
   } = props;
 
   const [photosModalOpen, setPhotosModalOpen] = React.useState(false);
@@ -154,6 +158,17 @@ export default function DocumentViewerHeader(props: Props) {
           </div>
 
           <div className="flex items-center gap-2">
+            {onOpenFullView && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={onOpenFullView}
+                disabled={disableFullView}
+              >
+                Complete View
+              </Button>
+            )}
             {/* {onOpenReportMeta && (
               <Button type="button" variant="secondary" className="hidden sm:inline-flex" onClick={onOpenReportMeta}>
                 Report Info

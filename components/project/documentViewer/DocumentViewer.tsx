@@ -6,6 +6,9 @@ import { createPortal } from "react-dom";
 import ProjectNotesSection from "../ProjectNotesSection";
 import SiteInspectionReportTemplate from "../SiteInspectionReportTemplate";
 import AddPicturesWithNotesModal from "@/components/modals/AddPicturesWithNotesModal";
+import Button from "@/components/ui/Button";
+import FormInput from "@/components/ui/FormInput";
+import { PDFIcon, SearchIcon } from "@/components/ui/Icons";
 
 import PdfViewer from "@/components/project/PdfViewer";
 import { useProjectFileUrl } from "@/hooks/useProjectFileUrl";
@@ -61,6 +64,7 @@ const IMAGE_STAGGER_STEP = 0.05;
 const IMAGE_MAX_START = 0.8;
 const MODAL_BACKDROP_Z = 10000;
 const MODAL_CONTENT_Z = 10010;
+const FULLSCREEN_HEADER_HEIGHT = 72;
 
 function makeImageId() {
   try {
@@ -91,6 +95,8 @@ const DocumentViewer = React.memo(
   ) {
     const [showPdf, setShowPdf] = React.useState(false);
     const handleClosePdf = React.useCallback(() => setShowPdf(false), []);
+    const [isFullScreen, setIsFullScreen] = React.useState(false);
+    const [fullScreenSearch, setFullScreenSearch] = React.useState("");
 
     const domRef = React.useRef<HTMLDivElement>(null);
     const [activeImageAnnId, setActiveImageAnnId] = React.useState<
@@ -142,6 +148,50 @@ const DocumentViewer = React.memo(
     React.useEffect(() => {
       if (activeTab === "view" && fileUrl) setShowPdf(true);
     }, [activeTab, fileUrl]);
+
+    React.useEffect(() => {
+      if (isFullScreen) setShowPdf(true);
+    }, [isFullScreen]);
+
+    React.useEffect(() => {
+      if (!isFullScreen || typeof document === "undefined") return;
+      const previous = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = previous;
+      };
+    }, [isFullScreen]);
+
+    React.useEffect(() => {
+      if (!isFullScreen || typeof window === "undefined") return;
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setIsFullScreen(false);
+        }
+      };
+      window.addEventListener("keydown", onKey);
+      return () => window.removeEventListener("keydown", onKey);
+    }, [isFullScreen]);
+
+    React.useEffect(() => {
+      if (typeof window === "undefined") return;
+      let raf1: number | null = null;
+      let raf2: number | null = null;
+      const trigger = () => {
+        raf1 = requestAnimationFrame(() => {
+          raf2 = requestAnimationFrame(() => {
+            window.dispatchEvent(new Event("resize"));
+          });
+        });
+      };
+      trigger();
+      return () => {
+        if (raf1) cancelAnimationFrame(raf1);
+        if (raf2) cancelAnimationFrame(raf2);
+        requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+      };
+    }, [isFullScreen]);
 
     const { files: projectFiles } = useProjectFiles(project?.id);
 
@@ -1040,6 +1090,18 @@ const DocumentViewer = React.memo(
 
       openCategory,
       domRef: domRef.current,
+      openFullScreen: () => {
+        setShowPdf(true);
+        setIsFullScreen(true);
+      },
+      closeFullScreen: () => setIsFullScreen(false),
+      toggleFullScreen: (next?: boolean) => {
+        setIsFullScreen((prev) => {
+          const target = typeof next === "boolean" ? next : !prev;
+          if (target) setShowPdf(true);
+          return target;
+        });
+      },
 
       exportPagesAsImages: async () => {
         // ? close editing + flush note saves before capturing
@@ -1087,18 +1149,72 @@ const DocumentViewer = React.memo(
 
     if (!isPdfLoaded) return null;
 
+    const outerClass = isFullScreen
+      ? "fixed inset-0 z-[9999] flex flex-col bg-white"
+      : "flex h-full min-h-0 w-full flex-col overflow-hidden";
+
+    const innerWrapClass = isFullScreen
+      ? "flex h-full w-full flex-col"
+      : "flex-1 min-h-0 w-full";
+
+    const viewerClass = isFullScreen
+      ? "relative z-0 flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-white"
+      : "relative z-0 flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden border border-border-gray bg-white shadow-sm";
+
+    const pdfHeight = isFullScreen
+      ? `calc(100vh - ${FULLSCREEN_HEADER_HEIGHT}px)`
+      : "100%";
+
     return (
-      <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
-        <div className="flex-1 min-h-0 w-full">
+      <div className={outerClass}>
+        <div className={innerWrapClass}>
+          {isFullScreen && (
+            <div className="sticky top-0 z-20 flex items-center gap-4 border-b border-border-gray bg-white px-4 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded bg-cancelled-color/15">
+                  <PDFIcon className="h-5 w-5 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-black sm:text-base">
+                    {selectedFile?.name || `${project?.name || "PDF"}.pdf`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-1 items-center justify-end gap-3">
+                <div className="relative w-full max-w-md">
+                  <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-placeholder-gray" />
+                  <FormInput
+                    label=""
+                    placeholder="Search here..."
+                    className="w-full bg-light-gray border-none focus:ring-0"
+                    value={fullScreenSearch}
+                    onChange={(e) => setFullScreenSearch(e.target.value)}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="md"
+                  className="whitespace-nowrap"
+                  onClick={() => setIsFullScreen(false)}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div
             ref={domRef}
             data-exporting={exportMode ? "1" : "0"}
-            className="relative z-0 flex h-full min-h-0 w-full flex-col overflow-hidden border border-border-gray bg-white shadow-sm"
+            className={viewerClass}
             style={{
               color: "#000000",
               fontFamily:
                 "Inter, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
               lineHeight: 1.6,
+              height: isFullScreen ? pdfHeight : undefined,
               cursor:
                 activeTab === "view"
                   ? "default"
@@ -1126,9 +1242,10 @@ const DocumentViewer = React.memo(
                 {showPdf && fileUrl ? (
                   <PdfViewer
                     fileUrl={fileUrl}
-                    height="100%"
+                    height={pdfHeight}
                     onClose={handleClosePdf}
                     onContainerRef={overlay.setPdfScrollEl}
+                    showHeader={!isFullScreen}
                   />
                 ) : (
                   <div className="h-full overflow-auto p-4">
@@ -1148,8 +1265,9 @@ const DocumentViewer = React.memo(
                 {fileUrl ? (
                   <PdfViewer
                     fileUrl={fileUrl}
-                    height="100%"
+                    height={pdfHeight}
                     onContainerRef={overlay.setPdfScrollEl}
+                    showHeader={!isFullScreen}
                   />
                 ) : (
                   <div className="flex h-full items-center justify-center text-sm text-text-gray">
