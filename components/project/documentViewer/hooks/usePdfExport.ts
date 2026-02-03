@@ -6,9 +6,103 @@ import type { Annotation } from "../types";
 type ExportedImage = { width: number; height: number; dataUrl: string };
 const EXPORT_IMAGE_TYPE = "image/jpeg";
 const EXPORT_IMAGE_QUALITY = 0.85;
+const DEBUG = process.env.NEXT_PUBLIC_DEBUG_PDF === "1";
 
 function raf() {
   return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function isDataUrl(src: string) {
+  return src.startsWith("data:");
+}
+
+function getUrl(src: string) {
+  try {
+    return new URL(src, window.location.href);
+  } catch {
+    return null;
+  }
+}
+
+async function inlineExportImages(root: Element) {
+  const imgs = Array.from(root.querySelectorAll("img")) as HTMLImageElement[];
+  const inlined: Array<{ el: HTMLImageElement; src: string; srcset: string | null }> = [];
+
+  for (const img of imgs) {
+    const rawSrc = (img.getAttribute("src") || "").trim();
+    if (!rawSrc) continue;
+    if (isDataUrl(rawSrc)) continue;
+
+    const url = getUrl(rawSrc);
+    const isSameOrigin = !!url && url.origin === window.location.origin;
+    const isApi = !!url && isSameOrigin && url.pathname.startsWith("/api/");
+    // Requirement: inline if same-origin protected (/api/...) OR not a data: URL.
+    if (!isApi && isDataUrl(rawSrc)) continue;
+
+    try {
+      const resp = await fetch(url ? url.toString() : rawSrc, {
+        credentials: isSameOrigin ? "include" : "omit",
+      });
+      if (!resp.ok) {
+        if (DEBUG) {
+          console.warn("[export] image inline failed", {
+            src: rawSrc,
+            status: resp.status,
+          });
+        }
+        continue;
+      }
+      const blob = await resp.blob();
+      const dataUrl = await blobToDataUrl(blob);
+
+      const origSrcset = img.getAttribute("srcset");
+      img.setAttribute("data-orig-src", rawSrc);
+      if (origSrcset) img.setAttribute("data-orig-srcset", origSrcset);
+      img.src = dataUrl;
+      if (origSrcset) img.removeAttribute("srcset");
+
+      inlined.push({ el: img, src: rawSrc, srcset: origSrcset });
+      if (DEBUG) {
+        console.log("[export] inlined image", { src: rawSrc, bytes: blob.size });
+      }
+      if (typeof img.decode === "function") {
+        try {
+          await img.decode();
+        } catch {}
+      }
+    } catch (err: any) {
+      if (DEBUG) {
+        console.warn("[export] image inline failed", {
+          src: rawSrc,
+          error: err?.message || String(err),
+        });
+      }
+    }
+  }
+
+  return inlined;
+}
+
+function restoreInlinedImages(inlined: Array<{ el: HTMLImageElement; src: string; srcset: string | null }>) {
+  for (const item of inlined) {
+    const { el, src, srcset } = item;
+    try {
+      el.src = src;
+      if (srcset) el.setAttribute("srcset", srcset);
+      else el.removeAttribute("srcset");
+      el.removeAttribute("data-orig-src");
+      el.removeAttribute("data-orig-srcset");
+    } catch {}
+  }
 }
 
 function uniqInDomOrder(nodes: HTMLElement[]): HTMLElement[] {
@@ -126,6 +220,7 @@ export function usePdfExport(args: {
       return false;
     };
 
+    let inlined: Array<{ el: HTMLImageElement; src: string; srcset: string | null }> = [];
     try {
       // Expand scroller so all pages exist in layout for correct rects
       if (scroller) {
@@ -138,6 +233,9 @@ export function usePdfExport(args: {
       // Mark scope + inject export CSS
       root.setAttribute(scopeAttr, "1");
       document.head.appendChild(headStyle);
+
+      // Inline protected or non-data images to avoid auth/CORS failures during html2canvas capture
+      inlined = await inlineExportImages(root);
 
       // Let DocumentViewer exportMode + layout settle
       await raf();
@@ -219,6 +317,9 @@ export function usePdfExport(args: {
       // restore scope
       if (prevScope === null) root.removeAttribute(scopeAttr);
       else root.setAttribute(scopeAttr, prevScope);
+
+      // restore inlined images
+      if (inlined.length) restoreInlinedImages(inlined);
 
       // cleanup style
       if (headStyle.parentNode) headStyle.parentNode.removeChild(headStyle);
