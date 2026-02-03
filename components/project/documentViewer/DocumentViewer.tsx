@@ -7,7 +7,8 @@ import ProjectNotesSection from "../ProjectNotesSection";
 import SiteInspectionReportTemplate from "../SiteInspectionReportTemplate";
 import AddPicturesWithNotesModal from "@/components/modals/AddPicturesWithNotesModal";
 import Button from "@/components/ui/Button";
-import { PDFIcon } from "@/components/ui/Icons";
+import FormInput from "@/components/ui/FormInput";
+import { PDFIcon, SearchIcon } from "@/components/ui/Icons";
 import DrawingToolsBar from "./components/DrawingToolsBar";
 
 import PdfViewer from "@/components/project/PdfViewer";
@@ -62,8 +63,11 @@ const DEFAULT_IMAGE_NORM_WIDTH = 0.25;
 const DEFAULT_IMAGE_NORM_HEIGHT = 0.2;
 const IMAGE_STAGGER_STEP = 0.05;
 const IMAGE_MAX_START = 0.8;
-const MODAL_BACKDROP_Z = 10000;
-const MODAL_CONTENT_Z = 10010;
+const MODAL_BACKDROP_Z = 100000;
+const MODAL_CONTENT_Z = 100010;
+const FULLSCREEN_Z = 90000;
+const FULLSCREEN_HEADER_HEIGHT = 88;
+const FULLSCREEN_TOOLBAR_HEIGHT = 64;
 
 function makeImageId() {
   try {
@@ -91,6 +95,10 @@ const DocumentViewer = React.memo(
       penColor = "black",
       penSize = "medium",
       onPenSettingsChange = () => {},
+      searchQuery,
+      onSearchChange,
+      searchResults,
+      onNavigateSearch,
       completeViewToolbar,
     },
     ref
@@ -100,6 +108,7 @@ const DocumentViewer = React.memo(
     const handleClosePdf = React.useCallback(() => setShowPdf(false), []);
     const [completeViewOpen, setCompleteViewOpen] = React.useState(false);
     const prevShowPdfRef = React.useRef<boolean>(false);
+    const [fullscreenResizeTick, setFullscreenResizeTick] = React.useState(0);
 
     const domRef = React.useRef<HTMLDivElement>(null);
     const [activeImageAnnId, setActiveImageAnnId] = React.useState<
@@ -154,6 +163,10 @@ const DocumentViewer = React.memo(
 
     React.useEffect(() => {
       if (completeViewOpen) setShowPdf(true);
+    }, [completeViewOpen]);
+
+    React.useEffect(() => {
+      setFullscreenResizeTick((tick) => tick + 1);
     }, [completeViewOpen]);
 
     React.useEffect(() => {
@@ -1177,68 +1190,121 @@ const DocumentViewer = React.memo(
 
     if (!isPdfLoaded) return null;
 
-    const outerClass = completeViewOpen
-      ? "fixed inset-0 z-[9999] flex flex-col bg-white"
-      : "flex h-full min-h-0 w-full flex-col overflow-hidden";
+    const isFullscreen = completeViewOpen;
+    const annotateOffset =
+      activeTab !== "view" ? FULLSCREEN_TOOLBAR_HEIGHT : 0;
+    const pdfHeight = isFullscreen
+      ? `calc(100vh - ${FULLSCREEN_HEADER_HEIGHT + annotateOffset}px)`
+      : "100%";
 
-    const innerWrapClass = completeViewOpen
+    const outerClass = isFullscreen
+      ? "fixed inset-0 flex flex-col bg-white"
+      : "flex h-full min-h-0 w-full flex-col overflow-hidden";
+    const innerWrapClass = isFullscreen
       ? "flex h-full w-full flex-col"
       : "flex-1 min-h-0 w-full";
-
-    const viewerClass = completeViewOpen
+    const viewerClass = isFullscreen
       ? "relative z-0 flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-white"
       : "relative z-0 flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden border border-border-gray bg-white shadow-sm";
 
-    const pdfHeight = "100%";
+    const searchMeta = searchResults || { count: 0, currentIndex: 0 };
 
-    return (
-      <div className={outerClass}>
-        <div className={innerWrapClass}>
-          {completeViewOpen && (
-            <div className="sticky top-0 z-20 flex flex-col gap-3 border-b border-border-gray bg-white px-4 py-3">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded bg-cancelled-color/15">
-                    <PDFIcon className="h-5 w-5 text-white" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-black sm:text-base">
-                      {selectedFile?.name || `${project?.name || "PDF"}.pdf`}
-                    </p>
+    const fullscreenHeader = isFullscreen ? (
+      <div
+        className="sticky top-0 flex flex-col gap-3 border-b border-border-gray bg-white/95 px-4 py-3 backdrop-blur-sm shadow-sm"
+        style={{ zIndex: FULLSCREEN_Z + 5 }}
+      >
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded bg-cancelled-color/15">
+              <PDFIcon className="h-5 w-5 text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-black sm:text-base">
+                {selectedFile?.name || `${project?.name || "PDF"}.pdf`}
+              </p>
+            </div>
+          </div>
+
+          {onSearchChange && (
+            <div className="relative w-full lg:max-w-xl">
+              <SearchIcon className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-placeholder-gray pointer-events-none" />
+              <FormInput
+                label=""
+                placeholder="Search in document..."
+                className="w-full bg-light-gray border-none focus:ring-0"
+                value={searchQuery || ""}
+                onChange={onSearchChange}
+              />
+              {searchMeta.count > 0 && (
+                <div className="absolute -bottom-8 left-0 right-0 flex items-center justify-between rounded border border-border-gray bg-white px-2 py-1 text-xs text-text-gray">
+                  <span className="truncate">
+                    {searchMeta.currentIndex} of {searchMeta.count} results
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onNavigateSearch?.("prev")}
+                      className="rounded px-2 py-1 hover:bg-light-gray"
+                      title="Previous result"
+                    >
+                      Prev
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onNavigateSearch?.("next")}
+                      className="rounded px-2 py-1 hover:bg-light-gray"
+                      title="Next result"
+                    >
+                      Next
+                    </button>
                   </div>
                 </div>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="md"
-                  className="whitespace-nowrap"
-                  onClick={() => {
-                    setCompleteViewOpen(false);
-                    setShowPdf(prevShowPdfRef.current);
-                  }}
-                >
-                  Close
-                </Button>
-              </div>
-
-              {activeTab !== "view" && (
-                completeViewToolbar || (
-                  <DrawingToolsBar
-                    selectedTool={selectedTool}
-                    onToolSelect={safeOnToolSelect}
-                    penColor={penColor}
-                    penSize={penSize}
-                    onPenSettingsChange={onPenSettingsChange}
-                    onUndo={onUndo}
-                    onRedo={onRedo}
-                    onOpenPhotos={() => onAddImageNote?.()}
-                    onAddNote={onAddNote}
-                  />
-                )
               )}
             </div>
           )}
+
+          <div className="flex items-center justify-end gap-2 lg:justify-start">
+            <Button
+              type="button"
+              variant="outline"
+              size="md"
+              className="whitespace-nowrap"
+              onClick={() => {
+                setCompleteViewOpen(false);
+                setShowPdf(prevShowPdfRef.current);
+              }}
+            >
+              Close
+            </Button>
+          </div>
+        </div>
+
+        {activeTab !== "view" &&
+          (completeViewToolbar || (
+            <DrawingToolsBar
+              selectedTool={selectedTool}
+              onToolSelect={safeOnToolSelect}
+              penColor={penColor}
+              penSize={penSize}
+              onPenSettingsChange={onPenSettingsChange}
+              onUndo={onUndo}
+              onRedo={onRedo}
+              onOpenPhotos={() => onAddImageNote?.()}
+              onAddNote={onAddNote}
+            />
+          ))}
+      </div>
+    ) : null;
+
+    const viewerNode = (
+      <div
+        className={outerClass}
+        data-fullscreen={isFullscreen ? "1" : undefined}
+        style={isFullscreen ? { zIndex: FULLSCREEN_Z } : undefined}
+      >
+        <div className={innerWrapClass}>
+          {fullscreenHeader}
 
           <div
             ref={domRef}
@@ -1249,7 +1315,7 @@ const DocumentViewer = React.memo(
               fontFamily:
                 "Inter, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
               lineHeight: 1.6,
-              height: completeViewOpen ? pdfHeight : undefined,
+              height: isFullscreen ? pdfHeight : undefined,
               cursor:
                 activeTab === "view"
                   ? "default"
@@ -1280,7 +1346,8 @@ const DocumentViewer = React.memo(
                     height={pdfHeight}
                     onClose={handleClosePdf}
                     onContainerRef={overlay.setPdfScrollEl}
-                    hideHeader={completeViewOpen}
+                    hideHeader={isFullscreen}
+                    resizeTrigger={fullscreenResizeTick}
                   />
                 ) : (
                   <div className="h-full overflow-auto p-4">
@@ -1302,7 +1369,8 @@ const DocumentViewer = React.memo(
                     fileUrl={fileUrl}
                     height={pdfHeight}
                     onContainerRef={overlay.setPdfScrollEl}
-                    hideHeader={completeViewOpen}
+                    hideHeader={isFullscreen}
+                    resizeTrigger={fullscreenResizeTick}
                   />
                 ) : (
                   <div className="flex h-full items-center justify-center text-sm text-text-gray">
@@ -1797,6 +1865,13 @@ const DocumentViewer = React.memo(
         />
       </div>
     );
+
+    const portalTarget =
+      typeof document !== "undefined" ? document.body : null;
+    if (isFullscreen && portalTarget) {
+      return createPortal(viewerNode, portalTarget);
+    }
+    return viewerNode;
   })
 );
 

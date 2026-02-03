@@ -225,14 +225,18 @@ export default function ProjectDetailsScreen({ projectId }: Props) {
           onToolSelect={handleToolSelect}
           activeTab={activeTab}
           onAddNote={handleOpenAddNotes}
-          onAddImageNote={handleOpenAddPictures}
-          onUndo={handleUndo}
-          onRedo={handleRedo}
-          onSelectFile={handleSelectFile}
-          penColor={penColor}
-          penSize={penSize}
-        />
-      </div>
+        onAddImageNote={handleOpenAddPictures}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        onSelectFile={handleSelectFile}
+        penColor={penColor}
+        penSize={penSize}
+        searchQuery={searchQuery}
+        onSearchChange={onSearchChange}
+        searchResults={searchResults}
+        onNavigateSearch={navigate}
+      />
+    </div>
 
       <NotesModal
         isOpen={isNotesOpen}

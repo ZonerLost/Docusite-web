@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import Button from '@/components/ui/Button';
 import Textarea from '@/components/ui/Textarea';
 import { XIcon, PlusIcon, TrashIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
+import ModalPortal from '@/components/shared/modals/ModalPortal';
 
 interface AddPicturesWithNotesModalProps {
   isOpen: boolean;
@@ -257,8 +257,8 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({ i
   if (!isOpen || !mounted) return null;
 
   const modalContent = (
-    <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black bg-opacity-50">
-      <div className="relative z-[9999] bg-white rounded-lg p-6 w-full max-w-sm mx-4">
+    <div className="w-full">
+      <div className="relative">
         <div className="flex items-center justify-between mb-4">
           {selectedIndices.size === 0 ? (
             <>
@@ -426,7 +426,22 @@ const AddPicturesWithNotesModal: React.FC<AddPicturesWithNotesModalProps> = ({ i
     </div>
   );
 
-  return createPortal(modalContent, document.body);
+  const handleClose = () => {
+    stopStream();
+    revokeCaptured();
+    setShowCamera(false);
+    onClose();
+  };
+
+  return (
+    <ModalPortal
+      isOpen={isOpen && mounted}
+      onClose={handleClose}
+      contentClassName="p-6"
+    >
+      {modalContent}
+    </ModalPortal>
+  );
 };
 
 export default AddPicturesWithNotesModal;

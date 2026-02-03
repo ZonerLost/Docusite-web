@@ -13,6 +13,8 @@ type Props = {
   height?: number | string;
   // Provide the scroll container to parent so it can anchor overlays to PDF content
   onContainerRef?: (el: HTMLDivElement | null) => void;
+  // Trigger a manual resize recompute (e.g., when entering fullscreen)
+  resizeTrigger?: number;
   exportMode?: boolean;
   onDocumentLoadSuccess?: (numPages: number) => void;
   onPageRender?: (pageNumber: number) => void;
@@ -41,6 +43,7 @@ const PdfInlineViewer = React.memo(function PdfInlineViewer({
   onDocumentLoadSuccess,
   onPageRender,
   renderPageOverlay,
+  resizeTrigger,
   hideHeader = false,
   headerActions,
 }: Props) {
@@ -59,6 +62,8 @@ const PdfInlineViewer = React.memo(function PdfInlineViewer({
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
 
   // Responsive page width
+  const MAX_PAGE_WIDTH = 1200;
+  const MIN_PAGE_WIDTH = 280;
   const [pageWidth, setPageWidth] = React.useState<number>(900);
 
   const documentOptions = React.useMemo(
@@ -75,31 +80,37 @@ const PdfInlineViewer = React.memo(function PdfInlineViewer({
     return () => onContainerRef?.(null);
   }, [onContainerRef]);
 
+  const computeWidth = React.useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const w = el.clientWidth || 0;
+    const next = Math.min(MAX_PAGE_WIDTH, Math.max(MIN_PAGE_WIDTH, w - 24));
+    setPageWidth(next);
+  }, [MAX_PAGE_WIDTH, MIN_PAGE_WIDTH]);
+
   React.useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
 
-    const compute = () => {
-      const w = el.clientWidth || 0;
-      const next = Math.max(280, w - 24);
-      setPageWidth(next);
-    };
-
-    compute();
+    computeWidth();
 
     let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined") {
-      ro = new ResizeObserver(() => compute());
+      ro = new ResizeObserver(() => computeWidth());
       ro.observe(el);
     } else {
-      window.addEventListener("resize", compute);
+      window.addEventListener("resize", computeWidth);
     }
 
     return () => {
       if (ro) ro.disconnect();
-      else window.removeEventListener("resize", compute);
+      else window.removeEventListener("resize", computeWidth);
     };
-  }, []);
+  }, [computeWidth]);
+
+  React.useEffect(() => {
+    computeWidth();
+  }, [computeWidth, resizeTrigger]);
 
   // Prepare a same-origin URL for pdf.js (handles CORS + Range)
   React.useEffect(() => {
@@ -272,14 +283,15 @@ const PdfInlineViewer = React.memo(function PdfInlineViewer({
                       data-export-page={exportMode ? "true" : undefined}
                       className="relative flex w-full justify-center overflow-hidden"
                     >
-                      <Page
-                        pageNumber={i + 1}
-                        width={pageWidth}
-                        renderAnnotationLayer={false}
-                        renderTextLayer={false}
-                        className="pdf-page"
-                        onRenderSuccess={(page: any) => {
-                          if (renderPageOverlay) {
+                  <Page
+                    pageNumber={i + 1}
+                    width={pageWidth}
+                    devicePixelRatio={1.5}
+                    renderAnnotationLayer={false}
+                    renderTextLayer={false}
+                    className="pdf-page"
+                    onRenderSuccess={(page: any) => {
+                      if (renderPageOverlay) {
                             try {
                               const viewport = page?.getViewport?.({ scale: 1 });
                               const height =

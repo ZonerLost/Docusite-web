@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 
 export type StoredProject = {
   id: string;
@@ -166,6 +166,10 @@ export type DocumentViewerProps = {
   penColor?: PenColor;
   penSize?: PenSize;
    onPenSettingsChange?: (cfg: { color?: PenColor; size?: PenSize }) => void;
+  searchQuery?: string;
+  onSearchChange?: (e: ChangeEvent<HTMLInputElement>) => void;
+  searchResults?: SearchResults;
+  onNavigateSearch?: (direction: "next" | "prev") => void;
   completeViewToolbar?: ReactNode;
 };
 

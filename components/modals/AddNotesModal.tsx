@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Button from '@/components/ui/Button';
 import Textarea from '@/components/ui/Textarea';
 import { XIcon } from 'lucide-react';
+import ModalPortal from '@/components/shared/modals/ModalPortal';
 
 interface AddNotesModalProps {
   isOpen: boolean;
@@ -28,8 +29,8 @@ const AddNotesModal: React.FC<AddNotesModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+    <ModalPortal isOpen={isOpen} onClose={onClose}>
+      <div className="p-6 w-full">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-black">Add Notes</h2>
           <button
@@ -61,7 +62,7 @@ const AddNotesModal: React.FC<AddNotesModalProps> = ({
           </div>
         </form>
       </div>
-    </div>
+    </ModalPortal>
   );
 };
 
