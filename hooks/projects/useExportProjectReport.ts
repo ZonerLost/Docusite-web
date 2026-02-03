@@ -60,7 +60,10 @@ export function useExportProjectReport(
     setIsExporting(true);
     const toastId = toast.loading("Generating report...");
     try {
-      await ensureSignedIn();
+      const user = await ensureSignedIn();
+      if (!user) {
+        throw new Error("Please sign in again to export.");
+      }
       // Export checklist: cover/summary + drawing pages + annotations + photo index/photos.
       const pages = await exportRef.current.exportPagesAsImages();
       if (!pages?.length) {
@@ -107,7 +110,7 @@ export function useExportProjectReport(
         imageUrls: photo.url ? [photo.url] : [],
       }));
 
-      const token = await auth.currentUser?.getIdToken();
+      const token = await user.getIdToken(true);
       const result = await exportProjectReport(
         {
           projectId: project.id,
